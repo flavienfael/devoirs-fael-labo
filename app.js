@@ -1047,6 +1047,19 @@
         el('button', { class: 'btn', type: 'button', text: 'Ajouter', onclick: async () => { try { await api('enregistrerRecompense', { recompense: { nom: nom.value.trim(), cout: Number(cout.value) } }); await charger(); ecranEtoiles(); } catch (e) { toast(e.message, true); } } })),
       el('h3', { text: 'Ajuster à la main' }),
       el('div', { class: 'rangee' }, [-5, -1, 1, 5].map(n => el('button', { class: 'btn discret', type: 'button', text: (n > 0 ? '+' : '') + n, onclick: async () => { try { const x = await api('ajusterEtoiles', { delta: n, motif: 'ajustement parent' }); D.etoiles = x.etoiles; store.set('donnees', D); ecranEtoiles(); } catch (e) { toast(e.message, true); } } }))),
+      el('h3', { text: 'Remise à zéro' }),
+      el('button', { class: 'btn discret large', type: 'button', text: '↺ Remettre les étoiles à zéro', onclick: async ev => {
+        const bt = ev.currentTarget;
+        if (!confirm('Remettre la tirelire de Faël à 0 étoile ? Les étoiles pas encore validées seront aussi effacées. L\'historique garde une trace de la remise à zéro.')) return;
+        bt.disabled = true;
+        try {
+          await charger(); /* solde à jour avant de le ramener à 0 */
+          const att = await api('etoilesEnAttente');
+          if (att.length) await api('validerEtoiles', { refuses: att.map(e => String(e.id)) });
+          const x = (D.etoiles || 0) ? await api('ajusterEtoiles', { delta: -(D.etoiles || 0), motif: 'remise à zéro par un parent' }) : { etoiles: 0 };
+          D.etoiles = x.etoiles; D.attente = 0; store.set('donnees', D); toast('Étoiles remises à zéro.'); ecranEtoiles();
+        } catch (e) { toast(e.message, true); bt.disabled = false; }
+      } }),
       el('h3', { text: 'Historique' }), hist);
     try { const h = await api('historiqueEtoiles'); hist.replaceChildren(...(h.length ? h.slice(0, 30).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16) }))) : [el('p', { class: 'vide', text: 'Rien pour l\'instant.' })])); }
     catch (e) { hist.replaceChildren(el('p', { class: 'muted petit', text: 'Historique indisponible hors ligne.' })); }
