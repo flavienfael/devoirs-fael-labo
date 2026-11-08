@@ -785,19 +785,20 @@
         el('p', { class: 'muted petit', text: 'Un fil à part, réservé au carnet : l\'IA connaît les notes et les résultats récents (sans le prénom) et peut vous alerter sur une tendance.' }), zone);
       return ongletDiscuter(zone, 'carnet');
     }
-    const hebdo = el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: '✉️ Bilan automatique du dimanche' }));
+    const hebdo = el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: '✉️ Bilans automatiques par courriel' }));
     hebdo.addEventListener('toggle', async () => {
       if (!hebdo.open || hebdo.dataset.ok) return; hebdo.dataset.ok = '1';
       const corps = el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:8px' }, el('p', { class: 'muted petit', text: 'Chargement…' })); hebdo.append(corps);
-      const test = el('button', { class: 'btn discret', type: 'button', text: 'M\'envoyer le bilan maintenant (essai)', onclick: async () => {
-        test.disabled = true;
-        try { await api('bilanHebdoMaintenant'); toast('Bilan envoyé : regarde ta boîte mail.'); }
+      const essai = periode => { const bt = el('button', { class: 'btn discret', type: 'button', text: periode === 'mois' ? 'Essai : bilan du mois' : 'Essai : bilan de la semaine', onclick: async () => {
+        bt.disabled = true;
+        try { await api('bilanHebdoMaintenant', { periode }); toast('Bilan envoyé : regarde ta boîte mail.'); }
         catch (e) { toast(/permission|autoris|MailApp/i.test(e.message) ? 'Envoi pas encore autorisé : lance une fois « installerBilanHebdo » dans Apps Script.' : e.message, true); }
-        test.disabled = false; } });
+        bt.disabled = false; } }); return bt; };
+      const test = el('div', { class: 'rangee' }, essai('semaine'), essai('mois'));
       let l = [];
       try { l = await api('derniersBilans'); } catch (e) { /* hors ligne */ }
       corps.replaceChildren(
-        el('p', { class: 'muted petit', text: 'Chaque dimanche vers 19 h, le moteur t\'envoie par courriel le bilan de la semaine (notes du carnet, exercices, étoiles, alertes, lecture de l\'IA). À activer une fois : dans Apps Script, choisis la fonction « installerBilanHebdo » puis « Exécuter ».' }),
+        el('p', { class: 'muted petit', text: 'Chaque dimanche vers 19 h (la semaine) et le 1er de chaque mois vers 19 h (le mois écoulé), le moteur t\'envoie par courriel le bilan : notes du carnet, exercices, étoiles et récompenses, alertes, lecture de l\'IA. À activer une fois : dans Apps Script, choisis la fonction « installerBilanHebdo » puis « Exécuter ».' }),
         l.length ? el('div', { class: 'retour info' }, el('b', { class: 'petit', text: 'Dernier bilan · ' + String(l[0].horodatage).slice(0, 10) }), el('span', { style: 'white-space:pre-wrap', text: l[0].texte })) : el('p', { class: 'muted petit', text: 'Aucun bilan envoyé pour l\'instant.' }),
         test);
     });
