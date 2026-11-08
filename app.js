@@ -531,7 +531,7 @@
     const formZone = el('div');
     const saisie = el('details', { class: 'carte', open: !!(prepa && prepa.titre) }, el('summary', { class: 'sommaire', text: '➕ Ajouter les devoirs de la semaine' }),
       el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:10px' },
-        el('label', { class: 'champ' }, 'Photo de l\'agenda (facultatif)', photo), apercu, texte, decouper, etat,
+        el('div', { class: 'champ' }, 'Photo de l\'agenda (facultatif)', boutonsPhoto(photo)), apercu, texte, decouper, etat,
         el('button', { class: 'btn discret', type: 'button', text: 'Ou ajouter une tâche à la main', onclick: () => formTache({ jour: prochainJourEcole() >= lundi && prochainJourEcole() <= dim ? prochainJourEcole() : lundi }) }), formZone));
 
     function formTache(t) {
@@ -906,13 +906,22 @@
     page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Photo ou texte', (lien && lien.retour) || '#/p/exercices'),
       ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La lecture sur le téléphone marche déjà.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('label', { class: 'champ' }, '1. Photo de la leçon (facultatif)', photo), apercu,
+        el('div', { class: 'champ' }, '1. Photo de la leçon (facultatif)', boutonsPhoto(photo)), apercu,
         el('div', { class: 'rangee' }, bLocal, bIA), etat,
         el('label', { class: 'champ' }, '2. Le texte de la leçon', texte),
         el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
         el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
         el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. L\'exercice est disponible tout de suite ; tu peux le corriger ou donner un retour ensuite.' })),
       go);
+  }
+  /* Deux boutons : l'appareil photo s'ouvre directement, ou on choisit une image déjà prise */
+  function boutonsPhoto(galerie) {
+    galerie.hidden = true;
+    const cam = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+    cam.addEventListener('change', () => { if (cam.files && cam.files[0]) { galerie.files = cam.files; galerie.dispatchEvent(new Event('change')); } });
+    return el('div', { class: 'rangee' }, cam, galerie,
+      el('button', { class: 'btn plein', type: 'button', text: '📷 Prendre une photo', onclick: () => cam.click() }),
+      el('button', { class: 'btn', type: 'button', text: '🖼️ Choisir une image', onclick: () => galerie.click() }));
   }
   function reduire(fichier) {
     return new Promise((ok, ko) => { const img = new Image(), url = URL.createObjectURL(fichier);
