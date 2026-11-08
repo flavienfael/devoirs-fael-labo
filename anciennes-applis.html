@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>[LABO] Anciennes applis</title>
+<style>
+:root{--desk:#e6eaf3;--paper:#fbfcff;--ink:#1b2340;--muted:#56618a;--seyes:#d5ddf2;--margin:#e0574f;--accent:#2747c9;--accent-ink:#fff;--chip:#eef1fb;--mark:#ffe9a8;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--desk:#0f1513;--paper:#1c2824;--ink:#edf1e8;--muted:#a3b1a8;--seyes:#28362f;--margin:#a8524a;--accent:#a7bfff;--accent-ink:#13201b;--chip:#24332d;--mark:#5a4a12;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--desk);color:var(--ink);font:17px/1.5 "Andika","Verdana",system-ui,sans-serif;padding:24px max(16px,env(safe-area-inset-left)) 48px max(16px,env(safe-area-inset-right))}
+main{max-width:720px;margin:0 auto;background:var(--paper);border-radius:4px;padding:24px 20px 28px 64px;position:relative;
+  background-image:linear-gradient(to right,transparent 41px,var(--margin) 41px,var(--margin) 43px,transparent 43px);box-shadow:0 10px 30px rgba(0,0,0,.12)}
+h1{margin:0 0 4px;font-size:clamp(1.6rem,6vw,2.3rem)}
+.lead{margin:0 0 16px;color:var(--muted)}
+.cherche{position:sticky;top:0;z-index:2;background:var(--paper);padding:8px 0 10px;margin-bottom:4px}
+.cherche input::-webkit-search-cancel-button{display:none}
+.cherche input{width:100%;min-height:48px;font:inherit;padding:10px 44px 10px 14px;border:2px solid var(--accent);border-radius:12px;background:var(--paper);color:var(--ink)}
+.cherche input:focus{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:1px}
+.champ{position:relative}
+.champ button{position:absolute;right:6px;top:6px;width:36px;height:36px;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:1.3rem;cursor:pointer}
+.filtres{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0}
+.filtres button{min-height:40px;padding:6px 14px;border:2px solid var(--seyes);border-radius:999px;background:var(--chip);color:var(--ink);font:inherit;font-size:.95rem;cursor:pointer}
+.filtres button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent);color:var(--accent-ink)}
+h2{margin:26px 0 4px;font-size:1.35rem;color:var(--accent)}
+h3{margin:14px 0 4px;font-size:.92rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+li{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 0;border-bottom:1px solid var(--seyes)}
+.txt{flex:1 1 220px;min-width:0}
+.nom{display:block;font-weight:700;font-size:1.1rem}
+.notions{display:block;color:var(--muted);font-size:.9rem}
+.aussi{display:block;color:var(--muted);font-size:.82rem}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 1px}
+a.b{display:inline-flex;align-items:center;min-height:44px;padding:8px 16px;border:2px solid var(--accent);border-radius:999px;color:var(--accent);font-weight:700;text-decoration:none}
+a.b.m{background:var(--accent);color:var(--accent-ink)}
+.vide{margin:24px 0;color:var(--muted)}
+@media (max-width:480px){main{padding-left:52px;background-image:linear-gradient(to right,transparent 33px,var(--margin) 33px,var(--margin) 35px,transparent 35px)}}
+</style>
+</head>
+<body><div aria-hidden="true" style="position:fixed;top:0;right:0;z-index:2147483647;pointer-events:none;background:#d97706;color:#fff;font:700 11px/1 system-ui,sans-serif;letter-spacing:.08em;padding:4px 8px;border-bottom-left-radius:8px;opacity:.92">LABO</div>
+<main>
+  <h1>Les cahiers de Faël</h1>
+  <p class="lead">Choisis ton exercice. « Téléphone » pour le portable ou la tablette, « Ordinateur » pour le PC.</p>
+  <div class="cherche" role="search">
+    <div class="champ"><input id="q" type="search" placeholder="Cherche : dictée, conjugaison, anglais…" aria-label="Chercher un exercice" autocomplete="off">
+    <button id="effacer" type="button" aria-label="Effacer" hidden>×</button></div>
+    <div class="filtres" id="filtres"></div>
+  </div>
+  <div id="liste"></div>
+</main>
+<script>
+/*
+  LISTE DES APPLIS — c'est la seule partie à modifier pour ajouter une appli.
+  matiere : Français, Mathématiques, Anglais, Questionner le monde…
+  theme   : le sujet principal, même nom que le dossier Drive « Matières › Matière › Sujet »
+  aussi   : autres sujets couverts (facultatif)
+  mobile / pc : nom du fichier (pc absent = pas de page ordinateur ; page unique = mobile seul avec unique:true)
+*/
+const APPS = [
+  {nom:"On ou ont, et ou est", matiere:"Français", theme:"Homophones grammaticaux", notions:"on / ont, et / est", mobile:"on-ont-et-est.html", unique:true},
+  {nom:"Les pronoms personnels sujets", matiere:"Français", theme:"Pronoms personnels sujets", aussi:["Conjugaison du présent"], notions:"je, tu, il, elle, on, nous, vous, ils, elles", mobile:"pronoms-sujets-mobile.html", pc:"pronoms-sujets-pc.html"},
+  {nom:"Je conjugue : prendre au présent", matiere:"Français", theme:"Conjugaison du présent", notions:"je prends, tu prends, il prend, nous prenons, vous prenez, ils prennent ; verbe", mobile:"conjugaison-mobile.html", pc:"conjugaison-pc.html"},
+  {nom:"Mes mots de dictée", matiere:"Français", theme:"Mots de dictée", aussi:["Conjugaison du présent"], notions:"orthographe, dictée du 5 novembre", mobile:"mots-dictee-mobile.html", pc:"mots-dictee-pc.html"},
+  {nom:"J’apprends ma poésie", matiere:"Français", theme:"Poésie", notions:"réciter, apprendre par cœur", mobile:"poesie-mobile.html", pc:"poesie-pc.html"},
+  {nom:"Convertir les longueurs", matiere:"Mathématiques", theme:"Mesures de longueurs", notions:"m, dm, cm, mm, tableau de conversion, mesures", mobile:"longueurs-mobile.html", pc:"longueurs-pc.html"},
+  {nom:"Segments et droites", matiere:"Mathématiques", theme:"Segments et droites", notions:"point, segment, droite, géométrie, tracer, règle", mobile:"geometrie-mobile.html"},
+  {nom:"Hello! My school things", matiere:"Anglais", theme:"School supplies", aussi:["Saluer (Good morning)", "Se présenter"], notions:"fournitures, pencil case, ruler, Have you got…?, Good morning, Hello", mobile:"anglais-mobile.html", pc:"anglais-pc.html"}
+];
+const ORDRE = ["Français", "Mathématiques", "Anglais", "Questionner le monde"];
+
+const $ = id => document.getElementById(id);
+const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’']/g, "'").toLowerCase();
+function el(t, p, ...k){ const e = document.createElement(t); for (const a in (p || {})) { if (a === 'text') e.textContent = p[a]; else if (a === 'class') e.className = p[a]; else e.setAttribute(a, p[a]); } k.flat().forEach(c => c != null && e.append(c)); return e; }
+/* Surligne les mots cherchés sans toucher au reste du texte */
+function surligne(texte, mots){
+  if (!mots.length) return [texte];
+  const n = norm(texte), marques = new Array(texte.length).fill(false);
+  mots.forEach(m => { let i = n.indexOf(m); while (i >= 0) { for (let k = i; k < i + m.length; k++) marques[k] = true; i = n.indexOf(m, i + m.length); } });
+  const out = []; let i = 0;
+  while (i < texte.length) { const on = marques[i]; let j = i; while (j < texte.length && marques[j] === on) j++; out.push(on ? el('mark', {text:texte.slice(i, j)}) : texte.slice(i, j)); i = j; }
+  return out;
+}
+let matiere = '';
+const matieres = ORDRE.filter(m => APPS.some(a => a.matiere === m)).concat([...new Set(APPS.map(a => a.matiere))].filter(m => !ORDRE.includes(m)));
+function filtres(){
+  $('filtres').replaceChildren(...['Tout'].concat(matieres).map(m => {
+    const b = el('button', {type:'button', 'aria-pressed': String((m === 'Tout' ? '' : m) === matiere), text:m});
+    b.onclick = () => { matiere = m === 'Tout' ? '' : m; filtres(); dessiner(); };
+    return b;
+  }));
+}
+function dessiner(){
+  const mots = norm($('q').value).split(/\s+/).filter(Boolean);
+  $('effacer').hidden = !mots.length;
+  const garde = APPS.filter(a => (!matiere || a.matiere === matiere) &&
+    mots.every(m => norm([a.nom, a.matiere, a.theme, (a.aussi || []).join(' '), a.notions].join(' ')).includes(m)));
+  const blocs = [];
+  matieres.forEach(m => {
+    const dansM = garde.filter(a => a.matiere === m); if (!dansM.length) return;
+    blocs.push(el('h2', {text:m}));
+    [...new Set(dansM.map(a => a.theme))].sort((x, y) => x.localeCompare(y, 'fr')).forEach(t => {
+      blocs.push(el('h3', {}, surligne(t, mots)));
+      blocs.push(el('ul', {}, dansM.filter(a => a.theme === t).map(a => el('li', {},
+        el('span', {class:'txt'},
+          el('span', {class:'nom'}, surligne(a.nom, mots)),
+          a.notions ? el('span', {class:'notions'}, surligne(a.notions, mots)) : null,
+          a.aussi && a.aussi.length ? el('span', {class:'aussi'}, 'Aussi : ', surligne(a.aussi.join(' · '), mots)) : null),
+        el('a', {class:'b m', href:a.mobile}, a.unique ? 'Ouvrir' : 'Téléphone'),
+        a.pc ? el('a', {class:'b', href:a.pc}, 'Ordinateur') : null))));
+    });
+  });
+  $('liste').replaceChildren(...(blocs.length ? blocs : [el('p', {class:'vide', text:'Rien trouvé. Essaie un autre mot, ou touche « Tout ».'})]));
+}
+$('q').addEventListener('input', dessiner);
+$('effacer').onclick = () => { $('q').value = ''; dessiner(); $('q').focus(); };
+filtres(); dessiner();
+</script>
+</body>
+</html>
