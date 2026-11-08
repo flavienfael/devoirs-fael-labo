@@ -184,7 +184,11 @@
     const url = el('input', { type: 'url', value: cfg.url || '', placeholder: 'https://script.google.com/macros/s/…/exec' });
     const jet = el('input', { type: 'password', value: cfg.jeton || '', autocomplete: 'off', placeholder: 'Code d\'accès' });
     const go = el('button', { class: 'btn plein large', type: 'button', text: 'Relier l\'appli', onclick: async () => {
-      store.set('cfg', { url: url.value.trim(), jeton: jet.value.trim() });
+      const u = url.value.trim(), j = jet.value.trim();
+      if (!u) return toast('Colle d\'abord l\'adresse du moteur (elle finit par /exec).', true);
+      if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(u)) return toast('Cette adresse ne ressemble pas à celle du moteur : elle doit commencer par https://script.google.com/ et finir par /exec.', true);
+      if (!j) return toast('Colle le code d\'accès (la valeur JETON).', true);
+      store.set('cfg', { url: u, jeton: j });
       go.disabled = true; go.textContent = 'Vérification…';
       try { await charger(); toast('Appli reliée.'); location.hash = '#/'; }
       catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Relier l\'appli'; }
