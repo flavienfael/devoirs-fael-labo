@@ -483,7 +483,8 @@
         t('#/p/devoirs', '📋', 'Mes devoirs du jour', 'Préparer la liste d\'étapes de Faël'),
         t('#/p/etoiles', '★', 'Étoiles et récompenses', (D.etoiles || 0) + ' étoiles'),
         t('#/p/journal', '📝', 'Journal d\'observation', '30 secondes par jour'),
-        t('#/p/conseils', '💬', 'Conseils', 'L\'essentiel, approfondir, dans l\'appli, discuter'),
+        t('#/p/conseils/discuter', '🗨️', 'Discuter avec l\'IA', 'Questions sur l\'accompagnement, recherche web possible'),
+        t('#/p/conseils/essentiel', '💬', 'Conseils', 'L\'essentiel, approfondir, dans l\'appli'),
         t('#/p/reglages', '⚙️', 'Réglages', 'Séries, pauses, voix, code parents'),
         t('anciennes-applis.html', '🗂️', 'Anciennes applis', 'Pour comparer'),
         t('#/relier', '🔗', 'Relier l\'appli au moteur', D.mistral ? 'IA activée (' + D.ia + ')' : 'IA pas encore activée')));
@@ -723,7 +724,7 @@
     if (onglet) ongletConseils = onglet;
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
     const ONG = [['essentiel', 'L\'essentiel'], ['approfondi', 'Approfondir'], ['appli', 'Dans l\'appli'], ['discuter', 'Discuter']];
-    const chips = el('div', { class: 'chips' }, ONG.map(([k, lib]) => el('button', { type: 'button', 'aria-pressed': String(k === ongletConseils), text: lib, onclick: () => ecranConseils(k) })));
+    const chips = el('div', { class: 'chips', style: 'flex-wrap:wrap;overflow:visible' }, ONG.map(([k, lib]) => el('button', { type: 'button', 'aria-pressed': String(k === ongletConseils), text: lib, onclick: () => ecranConseils(k) })));
     page(tete('Conseils', '#/parents'), chips, zone);
     try {
       if (!cacheConseils) cacheConseils = await api('conseils');
