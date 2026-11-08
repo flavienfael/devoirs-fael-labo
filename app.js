@@ -1,4 +1,4 @@
-/* Cahiers de Faël — appli unique (LABO, version 2, 08/11/2026 : IA via Mammouth ou Mistral, lecture de photo sur le téléphone).
+/* Cahiers de Faël — appli unique (LABO, version 3, 08/11/2026 : sans validation, demandes et retours).
    Une seule appli : l'espace de Faël (séances, devoirs du jour, étoiles) et l'espace parents
    (contenus saisis directement ou préparés par Mistral, devoirs, étoiles, journal, réglages, conseils).
    Les données vivent dans le « Moteur LABO » (Apps Script + tableur privé) ; rien de personnel n'est écrit dans ce fichier public. */
@@ -203,7 +203,7 @@
   /* ---------- Espace de Faël ---------- */
   let filtre = { q: '', matiere: '' };
   function ecranAccueil() {
-    const valides = contenus('validé');
+    const valides = contenus();
     const q = el('input', { type: 'search', placeholder: 'Chercher : dictée, conjugaison, anglais…', 'aria-label': 'Chercher un exercice', value: filtre.q, autocomplete: 'off', enterkeyhint: 'search' });
     const x = el('button', { class: 'x', type: 'button', 'aria-label': 'Effacer', text: '✕', hidden: !filtre.q });
     const liste = el('div', { class: 'liste' });
@@ -436,13 +436,50 @@
       el('div', { style: 'margin-top:12px' }, el('button', { class: 'btn plein large', type: 'button', text: 'Entrer', onclick: go }))));
     setTimeout(() => inp.focus(), 60);
   }
-  function ecranParents() {
-    const av = contenus('à valider').length;
+  function encartDemande(cidChoisi) {
+    const ta = el('textarea', { style: 'min-height:96px', placeholder: 'Ex. : « moins de questions par série », « la dictée d\'hier était trop dure, enlève les mots longs », « ajoute un mode nuit »…' });
+    const sel = el('select', { 'aria-label': 'Exercice concerné' }, el('option', { value: '', text: 'Pas d\'exercice précis' }), contenus().map(c => el('option', { value: c.id, text: c.titre, selected: String(c.id) === String(cidChoisi || '') })));
+    const rep = el('div');
+    const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer', onclick: async () => {
+      if (!ta.value.trim()) return ta.focus();
+      go.disabled = true; go.textContent = D.mistral ? 'L\'IA s\'en occupe…' : 'Envoi…';
+      try {
+        const d = await api('demande', { texte: ta.value.trim(), contenu: sel.value });
+        ta.value = '';
+        if (d.statut === 'appliqué') await charger();
+        rep.replaceChildren(el('div', { class: 'retour ' + (d.statut === 'appliqué' ? 'ok' : 'info') },
+          el('b', { text: d.statut === 'appliqué' ? (d.type === 'reglage' ? 'Réglage appliqué' : 'Exercice corrigé') : 'Noté' }), el('span', { text: d.reponse }),
+          d.statut === 'appliqué' ? el('button', { class: 'btn discret', type: 'button', text: 'Annuler ce changement', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('annulerDemande', { id: d.id }); await charger(); rep.replaceChildren(el('p', { class: 'muted petit', text: 'Changement annulé.' })); } catch (e) { toast(e.message, true); } } }) : null));
+      } catch (e) { toast(e.message, true); }
+      go.disabled = false; go.textContent = 'Envoyer';
+    } });
+    return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+      el('h2', { text: 'Une demande, un retour ?' }),
+      el('p', { class: 'muted petit', text: D.mistral ? 'L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi (annulable). Le reste est noté pour la prochaine session avec Claude. N\'écris pas d\'information personnelle.' : 'Ta demande est notée pour la prochaine session avec Claude.' }),
+      ta, el('label', { class: 'champ' }, 'À propos de', sel), go, rep,
+      el('a', { href: '#/p/demandes', class: 'petit', text: 'Voir toutes les demandes' }));
+  }
+
+  async function ecranDemandes() {
+    const liste = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
+    page(tete('Demandes et retours', '#/parents'), liste);
+    try {
+      const l = await api('demandes');
+      liste.replaceChildren(...(l.length ? l.map(d => el('div', { class: 'tuile', style: 'flex-direction:column;align-items:flex-start;gap:6px' },
+        el('span', { class: 'petit muted', text: String(d.horodatage).slice(0, 16) + (d.contenu && contenu(d.contenu) ? ' · ' + contenu(d.contenu).titre : '') }),
+        el('b', { text: d.texte }), el('span', {}, el('span', { class: 'badge ' + (d.statut === 'appliqué' ? 'ok' : d.statut === 'annulé' ? 'ar' : 'av'), text: d.statut }), ' ', d.reponse || ''),
+        d.statut === 'appliqué' ? el('button', { class: 'btn discret', type: 'button', text: 'Annuler ce changement', onclick: async () => { try { await api('annulerDemande', { id: d.id }); await charger(); ecranDemandes(); } catch (e) { toast(e.message, true); } } }) : null))
+        : [el('p', { class: 'vide', text: 'Aucune demande pour l\'instant.' })]));
+    } catch (e) { liste.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); }
+  }
+
+  function ecranParents(cidChoisi) {
     const t = (href, ic, titre, sous) => el('a', { class: 'tuile', href }, el('span', { class: 'ic', 'aria-hidden': 'true', text: ic }), el('span', {}, el('span', { class: 't', text: titre }), sous ? el('span', { class: 's', text: sous }) : null), el('span', { class: 'fl', text: '›' }));
     page(tete('Espace parents', '#/', el('button', { class: 'rond', type: 'button', 'aria-label': 'Actualiser', text: '↻', onclick: async () => { try { await charger(); toast('À jour.'); ecranParents(); } catch (e) { toast(e.message, true); } } })),
+      encartDemande(cidChoisi),
       el('div', { class: 'liste' },
         t('#/p/ajouter', '➕', 'Ajouter un exercice', 'Saisie directe, ou à partir d\'une photo ou d\'un texte'),
-        t('#/p/contenus', '📚', 'Tous les exercices', av ? av + ' à valider' : contenus().length + ' exercices'),
+        t('#/p/contenus', '📚', 'Tous les exercices', contenus().length + ' exercices'),
         t('#/p/devoirs', '📋', 'Mes devoirs du jour', 'Préparer la liste d\'étapes de Faël'),
         t('#/p/etoiles', '★', 'Étoiles et récompenses', (D.etoiles || 0) + ' étoiles'),
         t('#/p/journal', '📝', 'Journal d\'observation', '30 secondes par jour'),
@@ -453,14 +490,13 @@
   }
 
   function ecranContenus() {
-    const ordre = { 'à valider': 0, 'validé': 1 };
-    const l = contenus().slice().sort((a, b) => (ordre[a.statut] ?? 2) - (ordre[b.statut] ?? 2) || String(a.matiere + a.theme + a.titre).localeCompare(b.matiere + b.theme + b.titre, 'fr'));
+    const l = contenus().slice().sort((a, b) => String(a.matiere + a.theme + a.titre).localeCompare(b.matiere + b.theme + b.titre, 'fr'));
     page(tete('Tous les exercices', '#/parents'),
       el('a', { class: 'btn plein large', href: '#/p/ajouter', text: '➕ Ajouter un exercice' }),
       el('div', { class: 'liste' }, l.length ? l.map(c => el('a', { class: 'tuile', href: '#/p/contenu/' + c.id },
         el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[c.type] || '📘' }),
         el('span', {}, el('span', { class: 't', text: c.titre }), el('span', { class: 's', text: c.matiere + ' › ' + c.theme + ' · ' + (TYPES[c.type] || '') })),
-        el('span', { class: 'badge ' + (c.statut === 'validé' ? 'ok' : 'av'), text: c.statut }))) : el('p', { class: 'vide', text: 'Aucun exercice.' })));
+        el('span', { class: 'fl', text: '›' }))) : el('p', { class: 'vide', text: 'Aucun exercice.' })));
   }
 
   function ecranAjouter() {
@@ -470,7 +506,7 @@
         el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[ty] }), el('span', {}, el('span', { class: 't', text: TYPES[ty] }), el('span', { class: 's', text: AIDES_TYPES[ty] })), el('span', { class: 'fl', text: '›' })))),
       el('h3', { text: 'Préparé avec l\'IA' }),
       el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
-        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare un brouillon que vous validez' : 'Lecture de photo sur le téléphone ; l\'IA quand la clé sera ajoutée' })), el('span', { class: 'fl', text: '›' })));
+        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone ; l\'IA quand la clé sera ajoutée' })), el('span', { class: 'fl', text: '›' })));
   }
   const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
 
@@ -534,10 +570,10 @@
       const o = objet(statut);
       if (!o.titre) return toast('Il manque le titre.', true);
       if (!questions(o).length) return toast('Le contenu est vide ou incomplet.', true);
-      try { const r = await api('enregistrerContenu', { contenu: o }); brouillon = null; await charger(); toast(statut === 'validé' ? 'Validé : Faël peut le faire.' : 'Enregistré, à valider.'); puis ? puis(r) : (location.hash = '#/p/contenu/' + r.id); }
+      try { const r = await api('enregistrerContenu', { contenu: o }); brouillon = null; await charger(); toast('Enregistré : Faël peut le faire.'); puis ? puis(r) : (location.hash = '#/p/contenu/' + r.id); }
       catch (e) { toast(e.message, true); }
     }
-    page(tete(id ? 'Modifier' : 'Nouvel exercice', id ? '#/p/contenus' : '#/p/ajouter', c.statut ? el('span', { class: 'badge ' + (c.statut === 'validé' ? 'ok' : 'av'), text: c.statut }) : null),
+    page(tete(id ? 'Modifier' : 'Nouvel exercice', id ? '#/p/contenus' : '#/p/ajouter'),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('p', { class: 'muted petit', text: TYPES[ty] + ' · ' + (c.source || '') }),
         el('label', { class: 'champ' }, 'Titre', titre),
@@ -546,9 +582,9 @@
         el('label', { class: 'champ' }, 'Je retiens (facultatif)', el('span', { class: 'aide-champ', text: 'Une carte par bloc : 1re ligne = titre, puis le texte, et « Ex : » pour un exemple.' }), retiens),
         c.texteLu ? el('details', { class: 'lu' }, el('summary', { text: 'Le texte de départ' }), el('pre', { text: c.texteLu })) : null),
       el('div', { class: 'rangee' },
-        el('button', { class: 'btn', type: 'button', text: 'Essayer', onclick: () => sauver(c.statut === 'validé' ? 'validé' : 'à valider', r => { location.hash = '#/essai/' + r.id; }) }),
-        el('button', { class: 'btn', type: 'button', text: 'Enregistrer', onclick: () => sauver(c.statut === 'validé' ? 'validé' : 'à valider') }),
-        el('button', { class: 'btn ok', type: 'button', text: 'Valider pour Faël', onclick: () => sauver('validé') })),
+        el('button', { class: 'btn', type: 'button', text: 'Essayer', onclick: () => sauver('validé', r => { location.hash = '#/essai/' + r.id; }) }),
+        el('button', { class: 'btn plein', type: 'button', text: 'Enregistrer', onclick: () => sauver('validé') })),
+      id ? el('a', { class: 'btn discret large', href: '#/p/retour/' + c.id, text: 'Donner un retour à l\'IA sur cet exercice' }) : null,
       id ? el('button', { class: 'btn discret large', type: 'button', text: 'Archiver (Faël ne le verra plus)', onclick: async () => {
         if (!confirm('Archiver cet exercice ?')) return;
         try { await api('statutContenu', { id: c.id, statut: 'archivé' }); await charger(); location.hash = '#/p/contenus'; } catch (e) { toast(e.message, true); } } }) : null);
@@ -595,8 +631,9 @@
       go.disabled = true; go.textContent = 'L\'IA prépare le brouillon…';
       try {
         const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
-        brouillon = { type: r.type, titre: r.titre, matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme, donnees: r.donnees, statut: 'à valider', source: 'IA (' + (r.modele || 'Mistral') + ')', texteLu: r.texteLu };
-        location.hash = '#/p/nouveau/' + r.type;
+        const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
+        await charger(); toast('Prêt : Faël peut le faire. Tu peux le relire ou l\'essayer.');
+        location.hash = '#/p/contenu/' + c.id;
       } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer l\'exercice avec l\'IA'; }
     } });
     page(tete('Photo ou texte', '#/p/ajouter'),
@@ -607,7 +644,7 @@
         el('label', { class: 'champ' }, '2. Le texte de la leçon', texte),
         el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
         el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
-        el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. Le résultat arrive en brouillon, à relire et valider.' })),
+        el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. L\'exercice est disponible tout de suite ; tu peux le corriger ou donner un retour ensuite.' })),
       go);
   }
   function reduire(fichier) {
@@ -622,7 +659,7 @@
     const etapes = el('div', { class: 'liste' });
     const ligne = (e = {}) => {
       const t = el('input', { value: e.texte || '', placeholder: 'Ex. : Apprendre les mots en bleu' }), m = el('input', { type: 'number', min: 1, max: 60, value: e.minutes || 10, 'aria-label': 'Minutes' });
-      const s = el('select', { 'aria-label': 'Exercice lié' }, el('option', { value: '', text: 'Pas d\'exercice lié' }), contenus('validé').map(c => el('option', { value: c.id, text: c.titre, selected: String(c.id) === String(e.contenu) })));
+      const s = el('select', { 'aria-label': 'Exercice lié' }, el('option', { value: '', text: 'Pas d\'exercice lié' }), contenus().map(c => el('option', { value: c.id, text: c.titre, selected: String(c.id) === String(e.contenu) })));
       const b = el('div', { class: 'etape' }, t, m, s); b.lire = () => ({ texte: t.value.trim(), minutes: Number(m.value) || 10, contenu: s.value || '' }); return b;
     };
     const existant = (D.devoirs || []).find(d => d.date === jour());
@@ -719,7 +756,7 @@
     if (!a) return ecranAccueil();
     if (a === 'seance') return ecranSeance(b, false);
     if (a === 'devoirs') return ecranDevoirs(b);
-    if (a === 'parents') return porteParents(ecranParents);
+    if (a === 'parents') return porteParents(() => ecranParents());
     if (a === 'essai') return porteParents(() => ecranSeance(b, true));
     if (a === 'p') return porteParents(() => {
       if (b === 'contenus') return ecranContenus();
@@ -732,6 +769,8 @@
       if (b === 'journal') return ecranJournal();
       if (b === 'conseils') return ecranConseils();
       if (b === 'reglages') return ecranReglages();
+      if (b === 'demandes') return ecranDemandes();
+      if (b === 'retour') return ecranParents(c);
       return ecranParents();
     });
     ecranAccueil();
