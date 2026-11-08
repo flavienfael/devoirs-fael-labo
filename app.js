@@ -1,4 +1,4 @@
-/* Cahiers de Faël — appli unique (LABO, version 3, 08/11/2026 : sans validation, demandes et retours).
+/* Cahiers de Faël — appli unique (LABO, version 5, 08/11/2026 : accueil à barre unique, semaine, « J'ai fini ! » et étoiles validées, carnet de bord, cadenas parent dans les séances).
    Une seule appli : l'espace de Faël (séances, devoirs du jour, étoiles) et l'espace parents
    (contenus saisis directement ou préparés par Mistral, devoirs, étoiles, journal, réglages, conseils).
    Les données vivent dans le « Moteur LABO » (Apps Script + tableur privé) ; rien de personnel n'est écrit dans ce fichier public. */
@@ -76,7 +76,7 @@
   async function viderFile() {
     let file = store.get('file', []);
     while (file.length) {
-      try { const r = await api('envoyerResultats', file[0]); if (D && r) { D.etoiles = r.etoiles; store.set('donnees', D); } }
+      try { const r = await api('envoyerResultats', file[0]); if (D && r) { D.etoiles = r.etoiles; if (r.attente != null) D.attente = r.attente; store.set('donnees', D); } }
       catch (e) { return; }
       file.shift(); store.set('file', file);
     }
@@ -167,11 +167,11 @@
 
   /* ---------- Rendu général ---------- */
   const app = () => $('#app');
-  function page(...k) { app().replaceChildren(el('div', { class: 'wrap' }, ...k)); window.scrollTo(0, 0); document.body.classList.toggle('calme', !!R().calme); }
+  function page(...k) { app().replaceChildren(el('div', { class: 'wrap' }, ...k)); window.scrollTo(0, 0); document.body.classList.toggle('calme', !!R().calme); document.body.classList.remove('avec-onglets'); }
   function tete(titre, retour, droite) {
     return el('header', { class: 'tete' }, el('div', { class: 'gauche' }, retour ? el('a', { class: 'rond', href: retour, 'aria-label': 'Retour', text: '‹' }) : null, el('h1', { text: titre })), droite || null);
   }
-  const badgeEtoiles = () => el('span', { class: 'etoiles', 'aria-label': (D ? D.etoiles : 0) + ' étoiles' }, el('b', { text: '★' }), String(D ? D.etoiles || 0 : 0));
+  const badgeEtoiles = () => el('span', { class: 'etoiles', 'aria-label': (D ? D.etoiles || 0 : 0) + ' étoiles' + (D && D.attente ? ', ' + D.attente + ' à valider' : '') }, el('b', { text: '★' }), String(D ? D.etoiles || 0 : 0), D && D.attente ? el('small', { class: 'attente', text: '+' + D.attente }) : null);
   const ICONES = { mots: '✏️', conjugaison: '🔤', vocabulaire: '🇬🇧', qcm: '✅' };
   const TYPES = { mots: 'Mots à écrire', conjugaison: 'Conjugaison', vocabulaire: 'Vocabulaire', qcm: 'Questions' };
   const MATIERES = ['Français', 'Mathématiques', 'Anglais', 'Questionner le monde'];
@@ -193,22 +193,41 @@
       try { await charger(); toast('Appli reliée.'); location.hash = '#/'; }
       catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Relier l\'appli'; }
     } });
-    page(tete('Relier l\'appli', D ? '#/parents' : null),
+    page(tete('Relier l\'appli', D ? '#/p/reglages' : null),
       el('section', { class: 'carte' }, el('p', { text: 'À faire une seule fois sur chaque appareil. Ces informations restent sur cet appareil.' }),
         el('label', { class: 'champ' }, 'Adresse du moteur', el('span', { class: 'aide-champ', text: 'L\'adresse de l\'application Web « Moteur LABO », qui finit par /exec.' }), url),
         el('label', { class: 'champ', style: 'margin-top:12px' }, 'Code d\'accès', el('span', { class: 'aide-champ', text: 'Affiché dans le journal d\'exécution de setup().' }), jet),
         el('div', { style: 'margin-top:16px' }, go)));
   }
 
+  /* ---------- Dates ---------- */
+  const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+  const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const dateJ = j => new Date(j + 'T12:00:00');
+  const decale = (j, n) => { const d = dateJ(j); d.setDate(d.getDate() + n); return jour(d); };
+  const nomJour = j => { const d = dateJ(j); return JOURS[d.getDay()] + ' ' + d.getDate(); };
+  const lundiDe = j => decale(j, -((dateJ(j).getDay() + 6) % 7));
+  /* Le week-end, on prépare la semaine qui vient */
+  const lundiCourant = () => { const n = new Date().getDay(); return lundiDe(n === 0 || n === 6 ? plusJours(2) : jour()); };
+  /* Le prochain jour d'école (pas le mercredi ni le week-end) : ce que Faël prépare ce soir */
+  function prochainJourEcole() { let j = jour(); do { j = decale(j, 1); } while ([0, 3, 6].includes(dateJ(j).getDay())); return j; }
+
   /* ---------- Espace de Faël ---------- */
   let filtre = { q: '', matiere: '' };
+  let prepa = null; /* ce que la barre de recherche transmet à un écran parent (texte, tâche…) */
   function ecranAccueil() {
     const valides = contenus();
-    const q = el('input', { type: 'search', placeholder: 'Chercher : dictée, conjugaison, anglais…', 'aria-label': 'Chercher un exercice', value: filtre.q, autocomplete: 'off', enterkeyhint: 'search' });
+    const q = el('input', { type: 'search', placeholder: parentOk ? 'Chercher un exercice, ou taper un texte…' : 'Chercher : dictée, conjugaison, anglais…', 'aria-label': 'Chercher', value: filtre.q, autocomplete: 'off', enterkeyhint: 'search' });
     const x = el('button', { class: 'x', type: 'button', 'aria-label': 'Effacer', text: '✕', hidden: !filtre.q });
-    const liste = el('div', { class: 'liste' });
-    const chips = el('div', { class: 'chips' });
+    const liste = el('div', { class: 'liste' }), chips = el('div', { class: 'chips' }), actions = el('div');
     const mats = MATIERES.filter(m => valides.some(c => c.matiere === m)).concat([...new Set(valides.map(c => c.matiere))].filter(m => !MATIERES.includes(m)));
+    const tuile = (c, mots) => {
+      const a = el('a', { class: 'tuile', href: '#/seance/' + c.id },
+        el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[c.type] || '📘' }),
+        el('span', {}, el('span', { class: 't' }, surligne(c.titre, mots)), el('span', { class: 's', text: TYPES[c.type] || '' })),
+        el('span', { class: 'fl', text: '›' }));
+      return parentOk ? el('div', { class: 'ligne-tuile' }, a, el('a', { class: 'rond', href: '#/p/contenu/' + c.id, 'aria-label': 'Modifier ' + c.titre, text: '✎' })) : a;
+    };
     function dessiner() {
       chips.replaceChildren(...['Tout', ...mats].map(m => el('button', { type: 'button', 'aria-pressed': String((m === 'Tout' ? '' : m) === filtre.matiere), text: m, onclick: () => { filtre.matiere = m === 'Tout' ? '' : m; dessiner(); } })));
       const mots = norm(filtre.q).split(/\s+/).filter(Boolean);
@@ -219,25 +238,117 @@
         blocs.push(el('p', { class: 'matiere', text: m }));
         [...new Set(dans.map(c => c.theme))].sort((a, b) => a.localeCompare(b, 'fr')).forEach(t => {
           blocs.push(el('h3', {}, surligne(t, mots)));
-          dans.filter(c => c.theme === t).forEach(c => blocs.push(el('a', { class: 'tuile', href: '#/seance/' + c.id },
-            el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[c.type] || '📘' }),
-            el('span', {}, el('span', { class: 't' }, surligne(c.titre, mots)), el('span', { class: 's', text: TYPES[c.type] || '' })),
-            el('span', { class: 'fl', text: '›' }))));
+          dans.filter(c => c.theme === t).forEach(c => blocs.push(tuile(c, mots)));
         });
       });
-      liste.replaceChildren(...(blocs.length ? blocs : [el('p', { class: 'vide', text: valides.length ? 'Rien trouvé. Essaie un autre mot.' : 'Pas encore d\'exercice. Un parent peut en ajouter dans l\'espace parents.' })]));
+      liste.replaceChildren(...(blocs.length ? blocs : [el('p', { class: 'vide', text: valides.length ? 'Rien trouvé. Essaie un autre mot.' : 'Pas encore d\'exercice.' })]));
+      /* Mode parent : le texte tapé peut devenir un exercice, une tâche ou une demande */
+      const t = filtre.q.trim();
+      actions.replaceChildren(...(parentOk && t ? [el('div', { class: 'actions-recherche' },
+        el('p', { class: 'muted petit', text: 'Avec « ' + (t.length > 40 ? t.slice(0, 40) + '…' : t) + ' » :' }),
+        el('button', { class: 'btn', type: 'button', text: '✨ Créer un exercice avec ce texte', onclick: () => { prepa = { texte: t }; location.hash = '#/p/generer'; } }),
+        el('button', { class: 'btn', type: 'button', text: '📅 Ajouter à la semaine', onclick: () => { prepa = { titre: t }; location.hash = '#/p/semaine'; } }),
+        el('button', { class: 'btn', type: 'button', text: '💬 Envoyer comme demande à l\'IA', onclick: () => { prepa = { demande: t }; location.hash = '#/p/exercices'; } }))] : []));
     }
     q.addEventListener('input', () => { filtre.q = q.value; x.hidden = !q.value; dessiner(); });
     x.onclick = () => { q.value = ''; filtre.q = ''; x.hidden = true; dessiner(); q.focus(); };
-    const dj = (D.devoirs || []).filter(d => d.date === jour() && d.statut !== 'archivé');
+
+    /* Devoirs à préparer ce soir, tirés de la semaine préparée par les parents */
+    const pj = prochainJourEcole(), taches = (D.taches || []).filter(t => t.jour === pj);
+    const blocDevoirs = taches.length ? el('section', { class: 'carte devoirs' },
+      el('h2', { text: 'Mes devoirs pour ' + nomJour(pj) }),
+      el('p', { class: 'muted petit', text: 'Ce que la maîtresse a donné. Je touche une ligne pour commencer, et je coche quand c\'est fait.' }),
+      el('div', { class: 'liste' }, taches.map(t => el('a', { class: 'case' + (t.statut === 'fait' ? ' fait' : ''), href: '#/tache/' + t.id },
+        el('span', { class: 'coche', text: t.statut === 'fait' ? '✓' : '' }),
+        el('span', {}, el('span', { class: 't', text: t.titre }), t.matiere ? el('span', { class: 's muted petit', style: 'display:block', text: t.matiere + (t.contenu ? ' · exercice dans l\'appli' : '') }) : null)))))
+      : parentOk ? el('p', { class: 'aide petit', text: 'Rien de prévu pour ' + nomJour(pj) + '. Les devoirs se préparent dans l\'onglet Semaine.' }) : null;
+
     page(tete('Mes cahiers', null, badgeEtoiles()),
-      dj.map(d => el('a', { class: 'tuile', href: '#/devoirs/' + d.id, style: 'border:2px solid var(--accent)' },
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: '📋' }), el('span', {}, el('span', { class: 't', text: d.titre || 'Mes devoirs du jour' }), el('span', { class: 's', text: avancement(d) })), el('span', { class: 'fl', text: '›' }))),
+      parentOk ? el('div', { class: 'mode-parent' }, el('span', { text: '🔓 Mode parent' }), el('button', { class: 'btn discret', type: 'button', text: 'Verrouiller', onclick: () => { parentOk = false; ecranAccueil(); } })) : null,
+      blocDevoirs,
       el('div', { class: 'recherche', role: 'search' }, el('span', { class: 'loupe', 'aria-hidden': 'true', text: '🔍' }), q, x),
-      chips, liste,
-      el('a', { class: 'btn discret large', href: '#/parents', text: 'Espace parents' }));
+      actions, chips, liste,
+      el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }),
+      el('a', { class: 'tuile parents', href: '#/parents' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: parentOk ? '🔓' : '🔒' }),
+        el('span', {}, el('span', { class: 't', text: 'Espace parents' }), el('span', { class: 's', text: 'Semaine · Exercices · Carnet de bord · Conseils · Réglages' })), el('span', { class: 'fl', text: '›' })));
     dessiner();
   }
+
+  /* Une tâche de devoirs, côté Faël : minuteur, exercice lié, je coche */
+  function ecranTache(id) {
+    const t = (D.taches || []).find(x => String(x.id) === String(id));
+    if (!t) { page(tete('Mes devoirs', '#/'), el('p', { class: 'vide', text: 'Introuvable.' })); return; }
+    const total = 10 * 60, C = 2 * Math.PI * 62, svg = anneau(C), arc = svg.querySelector('.reste'), txt = svg.querySelector('text');
+    let reste = total, minuteur = null;
+    const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    txt.textContent = fmt(reste);
+    const lancer = el('button', { class: 'btn', type: 'button', text: 'Je lance 10 minutes', onclick: () => {
+      if (minuteur) return; lancer.disabled = true;
+      minuteur = setInterval(() => { reste--; txt.textContent = fmt(Math.max(0, reste)); arc.setAttribute('stroke-dashoffset', C * (1 - reste / total)); if (reste <= 0) { clearInterval(minuteur); dire([{ texte: 'Les 10 minutes sont finies. Tu peux faire une pause.' }]); } }, 1000);
+    } });
+    const fini = el('button', { class: 'btn ok large', type: 'button', text: t.statut === 'fait' ? 'Déjà fait ✓' : 'C\'est fait, je coche', disabled: t.statut === 'fait', onclick: async () => {
+      clearInterval(minuteur); fini.disabled = true;
+      t.statut = 'fait'; store.set('donnees', D);
+      envoyer({ resultats: [], etoiles: 2, motif: 'Devoirs : ' + t.titre });
+      D.attente = (D.attente || 0) + 2; store.set('donnees', D);
+      toast('+2 étoiles ★ à faire valider');
+      api('enregistrerTache', { tache: Object.assign({}, t, { statut: 'fait', source: 'coché par Faël' }) }).catch(() => {});
+      location.hash = '#/';
+    } });
+    page(tete(t.titre, '#/', badgeEtoiles()), el('section', { class: 'carte pause' },
+      el('p', { class: 'muted petit', text: (t.matiere ? t.matiere + ' · ' : '') + 'pour ' + nomJour(t.jour) }),
+      t.details ? el('p', { class: 'enonce', text: t.details }) : null,
+      svg, el('div', { class: 'rangee', style: 'width:100%' }, lancer,
+        t.contenu && contenu(t.contenu) ? el('a', { class: 'btn plein', href: '#/seance/' + t.contenu, text: 'Ouvrir l\'exercice' }) : null), fini));
+    dire([{ texte: t.titre + '. ' + (t.details || '') }]);
+  }
+
+  /* « J'ai fini ! » : Faël voit ses étoiles tout de suite, un parent les valide ensuite */
+  function ecranFini() {
+    const n = D.attente || 0;
+    page(tete('J\'ai fini !', '#/', badgeEtoiles()), el('section', { class: 'carte bilan' },
+      el('span', { class: 'grand', 'aria-hidden': 'true', text: n ? '🌟' : '🙂' }),
+      n ? el('h2', { text: 'Bravo, tu as gagné ' + n + ' étoile' + (n > 1 ? 's' : '') + ' !' }) : el('h2', { text: 'Pas encore d\'étoile à valider.' }),
+      el('p', { text: n ? 'Montre ton écran à papa ou maman : ils valident tes étoiles et elles vont dans ta tirelire.' : 'Fais un exercice ou coche un devoir pour gagner des étoiles.' }),
+      n ? el('a', { class: 'btn plein large', href: '#/p/valider', text: 'Papa ou maman valide' }) : el('a', { class: 'btn plein large', href: '#/', text: 'Retour à mes cahiers' })));
+    if (n) dire([{ texte: 'Bravo, tu as gagné ' + n + ' étoiles. Montre ton écran à papa ou maman.' }]);
+  }
+
+  /* ---------- Espace parents ---------- */
+  let parentOk = false;
+  function porteParents(suite) {
+    const code = String(R().codeParents || '');
+    if (!code || parentOk) { parentOk = true; return suite(); }
+    const inp = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Code parents' });
+    const go = () => { if (inp.value === code) { parentOk = true; suite(); } else { toast('Code incorrect.', true); inp.value = ''; } };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    page(tete('Espace parents', '#/'), el('section', { class: 'carte' }, el('label', { class: 'champ' }, 'Code parents', inp),
+      el('div', { style: 'margin-top:12px' }, el('button', { class: 'btn plein large', type: 'button', text: 'Entrer', onclick: go }))));
+    setTimeout(() => inp.focus(), 60);
+  }
+  /* Fenêtre par-dessus l'écran en cours (la séance de Faël continue derrière) */
+  function voile(titre, ...k) {
+    const corps = el('div', { class: 'corps' }, ...k);
+    const v = el('div', { class: 'voile', role: 'dialog', 'aria-modal': 'true', 'aria-label': titre },
+      el('div', { class: 'feuille' }, el('header', { class: 'tete' }, el('h1', { text: titre }), el('button', { class: 'rond', type: 'button', 'aria-label': 'Fermer', text: '✕', onclick: () => v.remove() })), corps));
+    v.corps = corps; document.body.append(v); return v;
+  }
+  function codeDansVoile(v, suite) {
+    const code = String(R().codeParents || '');
+    if (!code || parentOk) { parentOk = true; return suite(); }
+    const inp = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Code parents' });
+    const go = () => { if (inp.value === code) { parentOk = true; suite(); } else { toast('Code incorrect.', true); inp.value = ''; } };
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    v.corps.replaceChildren(el('label', { class: 'champ' }, 'Code parents', inp), el('button', { class: 'btn plein large', type: 'button', text: 'Entrer', onclick: go }));
+    setTimeout(() => inp.focus(), 60);
+  }
+
+  const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
+  function navParents(actif) {
+    return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
+      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'carnet' && D && D.attente ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
+  }
+  function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
 
   /* ---------- Séance ---------- */
   function ecranSeance(id, test) {
@@ -257,6 +368,8 @@
     if (dues.length) series.unshift(dues.map(q => Object.assign({}, q, { revoir: true })));
     const etat = { s: 0, i: 0, essai: 1, journal: [], etoiles: 0, debut: Date.now(), tq: Date.now() };
     const retour = test ? '#/p/contenu/' + c.id : '#/';
+    /* Cadenas : un parent ouvre le mode parent par-dessus la séance, sans la perdre */
+    const droiteSeance = () => el('span', { class: 'tete-droite' }, badgeEtoiles(), test ? null : el('button', { class: 'rond', type: 'button', 'aria-label': 'Mode parent', text: '🔒', onclick: () => modeParentSeance(c, etat.q) }));
 
     function lecon() {
       const cartes = (c.donnees.retiens || []).filter(x => x && (x.titre || x.texte));
@@ -274,13 +387,13 @@
             k < cartes.length - 1 ? el('button', { class: 'btn plein', type: 'button', text: 'Carte suivante ›', onclick: () => { k++; afficher(); } })
               : el('button', { class: 'btn plein', type: 'button', text: 'Je commence', onclick: question })));
       };
-      page(tete(c.titre, retour, badgeEtoiles()), el('section', { class: 'carte cahier' }, el('h2', { text: 'Je retiens' }), zone),
+      page(tete(c.titre, retour, droiteSeance()), el('section', { class: 'carte cahier' }, el('h2', { text: 'Je retiens' }), zone),
         el('button', { class: 'btn discret large', type: 'button', text: 'Passer la leçon', onclick: question }));
       afficher();
     }
 
     function question() {
-      const lot = series[etat.s], q = lot[etat.i];
+      const lot = series[etat.s], q = lot[etat.i]; etat.q = q;
       etat.essai = 1; etat.tq = Date.now();
       const points = el('div', { class: 'points', 'aria-hidden': 'true' }, lot.map((_, k) => el('i', { class: k < etat.i ? 'fait' : k === etat.i ? 'cours' : '' })));
       const libSerie = q.revoir ? 'Je revois mes erreurs' : 'Série ' + (etat.s + 1 - (series[0][0] && series[0][0].revoir ? 1 : 0)) + ' sur ' + series.filter(l => !l[0].revoir).length;
@@ -334,7 +447,7 @@
         zoneRep.replaceChildren(el('div', { class: 'saisie' }, inp, el('p', { class: 'muted petit', text: 'Avant de valider, je relis mon mot lettre par lettre.' }), val));
         setTimeout(() => inp.focus(), 60);
       }
-      page(tete(c.titre, retour, badgeEtoiles()),
+      page(tete(c.titre, retour, droiteSeance()),
         el('div', { class: 'progression' }, el('span', { text: libSerie }), points),
         el('section', { class: 'carte cahier' },
           el('p', { class: 'consigne' }, el('span', { class: 'lib', text: 'Consigne' }), ' : ', riche(q.consigne)),
@@ -372,11 +485,11 @@
         seconds ? 'Tu as trouvé ' + (premiers + seconds) + ' réponses sur ' + total + ', dont ' + seconds + ' grâce au coup de pouce : bien joué d\'avoir réessayé.' :
         'Tu as trouvé ' + premiers + ' réponses sur ' + total + '. Les autres reviendront pour t\'entraîner.';
       if (!test) envoyer({ resultats: j.map(x => Object.assign({ horodatage: new Date().toISOString().slice(0, 19).replace('T', ' ') }, x)), etoiles: gagne, motif: 'Séance : ' + c.titre })
-        .then(() => { const b = $('.etoiles'); if (b && D) b.lastChild.textContent = String(D.etoiles); });
-      if (D && !test) { D.etoiles = (D.etoiles || 0) + gagne; store.set('donnees', D); }
+        .then(() => { const b = $('.etoiles'); if (b && D) b.replaceWith(badgeEtoiles()); });
+      if (D && !test) { D.attente = (D.attente || 0) + gagne; store.set('donnees', D); }
       page(tete('Bilan', retour, badgeEtoiles()), el('section', { class: 'carte bilan' },
         el('h2', { text: 'Séance terminée' }), el('span', { class: 'gros', text: '+' + gagne + ' ★' }),
-        el('p', { text: phrase }), bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
+        el('p', { text: phrase }), bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance. Quand tu as tout fini, touche « J\'ai fini ! » pour les faire valider.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
         el('a', { class: 'btn plein large', href: retour, text: test ? 'Retour au contenu' : 'Retour à mes cahiers' })));
       dire([{ texte: 'Séance terminée. ' + phrase }]);
     }
@@ -390,54 +503,113 @@
     return svg;
   }
 
-  /* ---------- Mes devoirs du jour (Faël) ---------- */
-  const faitsDevoirs = id => store.get('devoirs.' + id, []);
-  function avancement(d) { const n = (d.etapes || []).length, f = faitsDevoirs(d.id).length; return n ? f + ' étape' + (f > 1 ? 's' : '') + ' sur ' + n : 'Aucune étape'; }
-  function ecranDevoirs(id) {
-    const d = (D.devoirs || []).find(x => String(x.id) === String(id));
-    if (!d) { page(tete('Mes devoirs', '#/'), el('p', { class: 'vide', text: 'Introuvable.' })); return; }
-    const faits = faitsDevoirs(d.id);
-    page(tete(d.titre || 'Mes devoirs du jour', '#/', badgeEtoiles()),
-      el('p', { class: 'muted', text: 'Une étape à la fois. Quand c\'est fait, je coche : +2 étoiles.' }),
-      el('div', { class: 'liste' }, (d.etapes || []).map((e, k) => el('button', { class: 'case' + (faits.includes(k) ? ' fait' : ''), type: 'button', onclick: () => ecranEtape(d, k) },
-        el('span', { class: 'coche', text: faits.includes(k) ? '✓' : '' }), el('span', {}, el('span', { class: 't', text: e.texte }), el('span', { class: 's muted petit', style: 'display:block', text: (e.minutes ? e.minutes + ' min' : '') + (e.contenu ? ' · exercice dans l\'appli' : '') }))))));
-  }
-  function ecranEtape(d, k) {
-    const e = d.etapes[k], total = (Number(e.minutes) || 10) * 60;
-    let reste = total, t = null;
-    const C = 2 * Math.PI * 62;
-    const svg = anneau(C);
-    const arc = svg.querySelector('.reste'), txt = svg.querySelector('text');
-    const fmt = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-    txt.textContent = fmt(reste);
-    const lancer = el('button', { class: 'btn', type: 'button', text: 'Je lance le minuteur', onclick: () => {
-      if (t) return; lancer.disabled = true;
-      t = setInterval(() => { reste--; txt.textContent = fmt(Math.max(0, reste)); arc.setAttribute('stroke-dashoffset', C * (1 - reste / total)); if (reste <= 0) { clearInterval(t); dire([{ texte: 'Le temps est écoulé. Tu peux faire une pause.' }]); } }, 1000);
+  /* ---------- Semaine : les devoirs donnés pour la semaine, et ce qu'il faut préparer ---------- */
+  const BESOINS = ['photo de la leçon', 'exercice d\'entraînement', 'appris', 'signature', 'matériel'];
+  const sauverTache = t => api('enregistrerTache', { tache: t });
+  async function ecranSemaine(lundi) {
+    lundi = /^\d{4}-\d{2}-\d{2}$/.test(lundi || '') ? lundiDe(lundi) : lundiCourant();
+    const dim = decale(lundi, 6), dl = dateJ(lundi), dd = dateJ(dim);
+    const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement de la semaine…' }));
+    const resume = el('div');
+    const nav = el('div', { class: 'semaine-nav' },
+      el('a', { class: 'rond', href: '#/p/semaine/' + decale(lundi, -7), 'aria-label': 'Semaine précédente', text: '‹' }),
+      el('b', { text: 'Du ' + dl.getDate() + (dl.getMonth() !== dd.getMonth() ? ' ' + MOIS[dl.getMonth()] : '') + ' au ' + dd.getDate() + ' ' + MOIS[dd.getMonth()] }),
+      el('a', { class: 'rond', href: '#/p/semaine/' + decale(lundi, 7), 'aria-label': 'Semaine suivante', text: '›' }));
+
+    /* Saisie de la semaine : photo de l'agenda ou du cahier de textes, ou texte tapé */
+    const photo = el('input', { type: 'file', accept: 'image/*' }), apercu = el('div'), etat = el('p', { class: 'muted petit' });
+    const texte = el('textarea', { style: 'min-height:90px', placeholder: 'Tape ou colle les devoirs de la semaine (ex. : « Jeudi : apprendre la leçon sur les noms. Vendredi : dictée des mots en bleu »). Ou prends l\'agenda en photo.' });
+    let image = null;
+    photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f); apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:140px;border-radius:8px' })); });
+    const decouper = el('button', { class: 'btn plein', type: 'button', text: '✨ Ranger par jour avec l\'IA', disabled: !D.mistral, onclick: async () => {
+      if (!texte.value.trim() && !image) return toast('Ajoute une photo ou un texte.', true);
+      decouper.disabled = true; etat.textContent = 'L\'IA lit et range les devoirs…';
+      try { const r = await api('analyserSemaine', { lundi, texte: texte.value.trim(), photoBase64: image && image.b64 }); etat.textContent = r.ajoutees + ' tâche' + (r.ajoutees > 1 ? 's ajoutées' : ' ajoutée') + '. Vérifie-les ci-dessous.'; texte.value = ''; image = null; apercu.replaceChildren(); photo.value = ''; await dessiner(); charger(); }
+      catch (e) { etat.textContent = e.message; }
+      decouper.disabled = !D.mistral;
     } });
-    const fini = el('button', { class: 'btn ok large', type: 'button', text: 'C\'est fait, je coche', onclick: () => {
-      clearInterval(t); const f = faitsDevoirs(d.id); if (!f.includes(k)) { f.push(k); store.set('devoirs.' + d.id, f); envoyer({ resultats: [], etoiles: 2, motif: 'Devoirs : ' + e.texte }); if (D) { D.etoiles = (D.etoiles || 0) + 2; store.set('donnees', D); } toast('+2 étoiles ★'); }
-      location.hash = '#/devoirs/' + d.id; ecranDevoirs(d.id);
-    } });
-    page(tete('Étape ' + (k + 1), '#/devoirs/' + d.id, badgeEtoiles()), el('section', { class: 'carte pause' },
-      el('p', { class: 'enonce', text: e.texte }), svg, el('div', { class: 'rangee', style: 'width:100%' }, lancer,
-        e.contenu && contenu(e.contenu) ? el('a', { class: 'btn plein', href: '#/seance/' + e.contenu, text: 'Ouvrir l\'exercice' }) : null), fini));
-    dire([{ texte: e.texte }]);
+    const formZone = el('div');
+    const saisie = el('details', { class: 'carte', open: !!(prepa && prepa.titre) }, el('summary', { class: 'sommaire', text: '➕ Ajouter les devoirs de la semaine' }),
+      el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:10px' },
+        el('label', { class: 'champ' }, 'Photo de l\'agenda (facultatif)', photo), apercu, texte, decouper, etat,
+        el('button', { class: 'btn discret', type: 'button', text: 'Ou ajouter une tâche à la main', onclick: () => formTache({ jour: prochainJourEcole() >= lundi && prochainJourEcole() <= dim ? prochainJourEcole() : lundi }) }), formZone));
+
+    function formTache(t) {
+      const jours = [0, 1, 2, 3, 4, 5, 6].map(n => decale(lundi, n));
+      const sj = el('select', { 'aria-label': 'Pour quel jour' }, jours.map(j => el('option', { value: j, text: 'Pour ' + nomJour(j), selected: j === t.jour })));
+      const ti = el('input', { value: t.titre || '', placeholder: 'Ex. : Apprendre la leçon sur les noms' });
+      const ma = el('select', {}, ['', ...MATIERES].map(m => el('option', { value: m, text: m || 'Matière…', selected: m === (t.matiere || '') })));
+      const de = el('textarea', { style: 'min-height:70px', placeholder: 'Détails (facultatif)' }); de.value = t.details || '';
+      const deja = (t.besoins || []).map(b => b.libelle);
+      const cases = BESOINS.map(b => { const c = el('input', { type: 'checkbox', checked: deja.includes(b) }); c.lib = b; return c; });
+      formZone.replaceChildren(el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+        el('h2', { text: t.id ? 'Modifier la tâche' : 'Nouvelle tâche' }), sj, el('label', { class: 'champ' }, 'Le devoir', ti), ma, de,
+        el('fieldset', { class: 'besoins-choix' }, el('legend', { text: 'À préparer' }), cases.map(c => el('label', {}, c, ' ' + c.lib))),
+        el('div', { class: 'rangee' }, el('button', { class: 'btn', type: 'button', text: 'Annuler', onclick: () => formZone.replaceChildren() }),
+          el('button', { class: 'btn plein', type: 'button', text: 'Enregistrer', onclick: async () => {
+            if (!ti.value.trim()) return ti.focus();
+            const anciens = t.besoins || [];
+            const besoins = cases.filter(c => c.checked).map(c => anciens.find(b => b.libelle === c.lib) || { libelle: c.lib, fait: false });
+            try { await sauverTache(Object.assign({}, t, { jour: sj.value, titre: ti.value.trim(), matiere: ma.value, details: de.value.trim(), besoins })); formZone.replaceChildren(); toast('Enregistré.'); await dessiner(); charger(); }
+            catch (e) { toast(e.message, true); } } }))));
+      saisie.open = true; formZone.scrollIntoView({ behavior: 'smooth', block: 'start' }); ti.focus();
+    }
+
+    function carteTache(t) {
+      const besoins = t.besoins || [];
+      const note = el('textarea', { class: 'note', placeholder: 'Note entre parents (ex. : « Je m\'en occupe mardi »)', 'aria-label': 'Note entre parents' }); note.value = t.note || '';
+      note.addEventListener('change', () => { t.note = note.value.trim(); sauverTache(t).then(() => toast('Note enregistrée.')).catch(e => toast(e.message, true)); });
+      const lie = t.contenu && contenu(t.contenu);
+      const choix = el('select', { 'aria-label': 'Relier un exercice existant' }, el('option', { value: '', text: 'Relier un exercice existant…' }), contenus().map(c => el('option', { value: c.id, text: c.titre })));
+      choix.addEventListener('change', async () => { if (!choix.value) return; t.contenu = choix.value; besoins.forEach(b => { if (/exercice/.test(b.libelle)) b.fait = true; }); try { await sauverTache(t); dessiner(); charger(); } catch (e) { toast(e.message, true); } });
+      const reste = besoins.filter(b => !b.fait).length;
+      return el('section', { class: 'carte tache' + (besoins.length && !reste ? ' prete' : '') },
+        el('div', { class: 'tache-tete' }, el('b', { text: t.titre }), t.statut === 'fait' ? el('span', { class: 'badge ok', text: 'fait par Faël' }) : null),
+        t.matiere || t.details ? el('p', { class: 'muted petit', text: [t.matiere, t.details].filter(Boolean).join(' · ') }) : null,
+        besoins.length ? el('div', { class: 'besoins' }, besoins.map(b => el('button', { class: 'besoin' + (b.fait ? ' ok' : ''), type: 'button', 'aria-pressed': String(!!b.fait), onclick: async () => {
+          b.fait = !b.fait; try { await sauverTache(t); dessiner(); } catch (e) { b.fait = !b.fait; toast(e.message, true); } } }, b.fait ? '✓ ' : '○ ', b.libelle))) : null,
+        lie ? el('a', { class: 'btn discret', href: '#/p/contenu/' + lie.id, text: '✏️ ' + lie.titre })
+          : el('div', { class: 'rangee' }, el('button', { class: 'btn', type: 'button', text: '📷 Préparer l\'exercice', onclick: () => { prepa = { texte: [t.titre, t.details].filter(Boolean).join('\n'), tache: t, retour: '#/p/semaine/' + lundi }; location.hash = '#/p/generer'; } }), choix),
+        note,
+        el('div', { class: 'rangee petit' }, el('button', { class: 'btn discret', type: 'button', text: 'Modifier', onclick: () => formTache(t) }),
+          el('button', { class: 'btn discret', type: 'button', text: 'Retirer', onclick: async () => { if (!confirm('Retirer « ' + t.titre + ' » ?')) return; try { await sauverTache(Object.assign({}, t, { statut: 'archivé' })); dessiner(); charger(); } catch (e) { toast(e.message, true); } } })));
+    }
+
+    async function dessiner() {
+      let taches;
+      try { taches = await api('semaine', { lundi }); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Semaine indisponible hors ligne.' })); return; }
+      const aPreparer = []; taches.forEach(t => (t.besoins || []).forEach(b => { if (!b.fait) aPreparer.push(b.libelle + ' (' + t.titre + ')'); }));
+      resume.replaceChildren(taches.length ? el('div', { class: 'retour ' + (aPreparer.length ? 'info' : 'ok') },
+        el('b', { text: aPreparer.length ? aPreparer.length + ' chose' + (aPreparer.length > 1 ? 's' : '') + ' à préparer' : 'Tout est prêt pour la semaine 🟢' }),
+        aPreparer.length ? el('span', { class: 'petit', text: aPreparer.slice(0, 6).join(' · ') + (aPreparer.length > 6 ? '…' : '') }) : null) : '');
+      const parJour = {}; taches.forEach(t => (parJour[t.jour] = parJour[t.jour] || []).push(t));
+      const jours = [0, 1, 2, 3, 4, 5, 6].map(n => decale(lundi, n)).filter(j => parJour[j] || ![0, 3, 6].includes(dateJ(j).getDay()));
+      zone.replaceChildren(...jours.map(j => el('div', { class: 'jour' + (j === jour() ? ' aujourdhui' : '') },
+        el('h3', { text: 'Pour ' + nomJour(j) + (j === prochainJourEcole() ? ' · Faël le voit ce soir' : '') }),
+        parJour[j] ? parJour[j].map(carteTache) : el('p', { class: 'muted petit', text: 'Rien de prévu.' }))));
+    }
+    pageP('Semaine', 'semaine', el('button', { class: 'rond', type: 'button', 'aria-label': 'Actualiser', text: '↻', onclick: () => dessiner() }),
+      nav, resume, saisie, zone);
+    if (prepa && prepa.titre) { const t = prepa.titre; prepa = null; formTache({ jour: prochainJourEcole(), titre: t }); }
+    await dessiner();
   }
 
-  /* ---------- Espace parents ---------- */
-  let parentOk = false;
-  function porteParents(suite) {
-    const code = String(R().codeParents || '');
-    if (!code || parentOk) return suite();
-    const inp = el('input', { type: 'password', inputmode: 'numeric', autocomplete: 'off', 'aria-label': 'Code parents' });
-    const go = () => { if (inp.value === code) { parentOk = true; suite(); } else { toast('Code incorrect.', true); inp.value = ''; } };
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
-    page(tete('Espace parents', '#/'), el('section', { class: 'carte' }, el('label', { class: 'champ' }, 'Code parents', inp),
-      el('div', { style: 'margin-top:12px' }, el('button', { class: 'btn plein large', type: 'button', text: 'Entrer', onclick: go }))));
-    setTimeout(() => inp.focus(), 60);
+  /* ---------- Exercices : ajouter, demander un changement ---------- */
+  const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
+  function ecranExercices(cidChoisi) {
+    const demande = prepa && prepa.demande; prepa = null;
+    pageP('Exercices', 'exercices', null,
+      el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
+        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone' })), el('span', { class: 'fl', text: '›' })),
+      el('h3', { text: 'Saisie directe' }),
+      el('div', { class: 'liste' }, Object.keys(TYPES).map(ty => el('a', { class: 'tuile', href: '#/p/nouveau/' + ty },
+        el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[ty] }), el('span', {}, el('span', { class: 't', text: TYPES[ty] }), el('span', { class: 's', text: AIDES_TYPES[ty] })), el('span', { class: 'fl', text: '›' })))),
+      el('p', { class: 'muted petit', text: 'Pour retrouver ou modifier un exercice : la barre de recherche de l\'accueil (✎ à côté de chaque exercice en mode parent), ou le cadenas 🔒 pendant une séance.' }),
+      encartDemande(cidChoisi, demande));
   }
-  function encartDemande(cidChoisi) {
+  function encartDemande(cidChoisi, texteInitial) {
     const ta = el('textarea', { style: 'min-height:96px', placeholder: 'Ex. : « moins de questions par série », « la dictée d\'hier était trop dure, enlève les mots longs », « ajoute un mode nuit »…' });
+    if (texteInitial) ta.value = texteInitial;
     const sel = el('select', { 'aria-label': 'Exercice concerné' }, el('option', { value: '', text: 'Pas d\'exercice précis' }), contenus().map(c => el('option', { value: c.id, text: c.titre, selected: String(c.id) === String(cidChoisi || '') })));
     const rep = el('div');
     const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer', onclick: async () => {
@@ -455,14 +627,13 @@
     } });
     return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
       el('h2', { text: 'Une demande, un retour ?' }),
-      el('p', { class: 'muted petit', text: D.mistral ? 'L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi (annulable). Le reste est noté pour la prochaine session avec Claude. N\'écris pas d\'information personnelle.' : 'Ta demande est notée pour la prochaine session avec Claude.' }),
+      el('p', { class: 'muted petit', text: D.mistral ? 'L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi (annulable). Le reste est noté pour la prochaine session avec Claude.' : 'Ta demande est notée pour la prochaine session avec Claude.' }),
       ta, el('label', { class: 'champ' }, 'À propos de', sel), go, rep,
       el('a', { href: '#/p/demandes', class: 'petit', text: 'Voir toutes les demandes' }));
   }
-
   async function ecranDemandes() {
     const liste = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    page(tete('Demandes et retours', '#/parents'), liste);
+    pageP('Demandes et retours', 'exercices', null, liste);
     try {
       const l = await api('demandes');
       liste.replaceChildren(...(l.length ? l.map(d => el('div', { class: 'tuile', style: 'flex-direction:column;align-items:flex-start;gap:6px' },
@@ -473,43 +644,114 @@
     } catch (e) { liste.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); }
   }
 
-  function ecranParents(cidChoisi) {
-    const t = (href, ic, titre, sous) => el('a', { class: 'tuile', href }, el('span', { class: 'ic', 'aria-hidden': 'true', text: ic }), el('span', {}, el('span', { class: 't', text: titre }), sous ? el('span', { class: 's', text: sous }) : null), el('span', { class: 'fl', text: '›' }));
-    page(tete('Espace parents', '#/', el('button', { class: 'rond', type: 'button', 'aria-label': 'Actualiser', text: '↻', onclick: async () => { try { await charger(); toast('À jour.'); ecranParents(); } catch (e) { toast(e.message, true); } } })),
-      encartDemande(cidChoisi),
-      el('div', { class: 'liste' },
-        t('#/p/ajouter', '➕', 'Ajouter un exercice', 'Saisie directe, ou à partir d\'une photo ou d\'un texte'),
-        t('#/p/contenus', '📚', 'Tous les exercices', contenus().length + ' exercices'),
-        t('#/p/devoirs', '📋', 'Mes devoirs du jour', 'Préparer la liste d\'étapes de Faël'),
-        t('#/p/etoiles', '★', 'Étoiles et récompenses', (D.etoiles || 0) + ' étoiles'),
-        t('#/p/journal', '📝', 'Journal d\'observation', '30 secondes par jour'),
-        t('#/p/conseils/discuter', '🗨️', 'Discuter avec l\'IA', 'Questions sur l\'accompagnement, recherche web possible'),
-        t('#/p/conseils/essentiel', '💬', 'Conseils', 'L\'essentiel, approfondir, dans l\'appli'),
-        t('#/p/reglages', '⚙️', 'Réglages', 'Séries, pauses, voix, code parents'),
-        t('anciennes-applis.html', '🗂️', 'Anciennes applis', 'Pour comparer'),
-        t('#/relier', '🔗', 'Relier l\'appli au moteur', D.mistral ? 'IA activée (' + D.ia + ')' : 'IA pas encore activée')));
+  /* ---------- Carnet de bord des parents ---------- */
+  const CRITERES = [['concentration', 'Concentration'], ['humeur', 'Humeur'], ['autonomie', 'Autonomie'], ['sommeil', 'Sommeil']];
+  const AUTEURS = ['Flavien', 'Manue'];
+  function formCarnet(apres, titre) {
+    const auteur = el('select', { 'aria-label': 'Qui écrit' }, AUTEURS.map(a => el('option', { value: a, text: a, selected: a === store.get('auteur', 'Flavien') })));
+    const notes = {};
+    const rangees = CRITERES.map(([k, lib]) => el('div', { class: 'note-ligne' }, el('span', { text: lib }),
+      el('div', { class: 'notes', role: 'group', 'aria-label': lib }, [1, 2, 3, 4, 5].map(n => el('button', { type: 'button', 'aria-pressed': 'false', text: String(n), onclick: ev => {
+        notes[k] = notes[k] === n ? '' : n; ev.currentTarget.parentNode.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.textContent) === notes[k]))); } })))));
+    const rem = el('textarea', { style: 'min-height:80px', placeholder: 'Ce qui a marché, ce qui a coincé, le contexte (fatigue, sortie, contrôle…)' });
+    const go = el('button', { class: 'btn plein', type: 'button', text: 'Noter dans le carnet', onclick: async () => {
+      if (!rem.value.trim() && !Object.values(notes).some(Boolean)) return toast('Mets au moins une note ou une remarque.', true);
+      store.set('auteur', auteur.value); go.disabled = true;
+      try { await api('ajouterCarnet', { entree: Object.assign({ auteur: auteur.value, remarque: rem.value.trim() }, notes) }); toast('Noté.'); apres && apres(); }
+      catch (e) { toast(e.message, true); go.disabled = false; }
+    } });
+    return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+      el('h2', { text: titre || 'Nouvelle note' }), el('label', { class: 'champ' }, 'Qui écrit', auteur),
+      el('p', { class: 'muted petit', text: 'De 1 (difficile) à 5 (très bien). Tout est facultatif. Plusieurs notes par jour possibles.' }),
+      rangees, el('label', { class: 'champ' }, 'Remarque', rem), go);
+  }
+  function blocBilan(b) {
+    const m = b.moyennes || {}, s = b.stats || {};
+    return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:8px' },
+      el('h2', { text: 'Bilan des ' + b.jours + ' derniers jours' }),
+      el('div', { class: 'moyennes' }, CRITERES.map(([k, lib]) => el('div', {}, el('b', { text: m[k] == null ? '—' : String(m[k]).replace('.', ',') }), el('small', { text: lib })))),
+      el('p', { class: 'muted petit', text: b.entrees + ' note' + (b.entrees > 1 ? 's' : '') + ' dans le carnet' + (s.premiersEssais ? ' · ' + s.reussitePremier + ' % de bonnes réponses du premier coup · ' + s.seances + ' séance' + (s.seances > 1 ? 's' : '') : '') + '.' }),
+      (b.alertes || []).map(a => el('p', { class: 'alerte', text: '🟠 ' + a })),
+      b.synthese ? el('div', { class: 'retour ok' }, el('b', { class: 'petit', text: 'Lecture de l\'IA' }), el('span', { style: 'white-space:pre-wrap', text: b.synthese })) : null);
+  }
+  async function ecranCarnet(sous) {
+    if (sous === 'discuter') {
+      const zone = el('div');
+      pageP('Discuter du carnet', 'carnet', el('a', { class: 'rond', href: '#/p/carnet', 'aria-label': 'Retour au carnet', text: '📓' }),
+        el('p', { class: 'muted petit', text: 'Un fil à part, réservé au carnet : l\'IA connaît les notes et les résultats récents (sans le prénom) et peut vous alerter sur une tendance.' }), zone);
+      return ongletDiscuter(zone, 'carnet');
+    }
+    const alertes = el('div'), entrees = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' })), bilanZone = el('div');
+    const bilanBtn = periode => el('button', { class: 'btn', type: 'button', text: periode === 'mois' ? 'Bilan du mois' : 'Bilan de la semaine', onclick: async ev => {
+      const b = ev.currentTarget; b.disabled = true; bilanZone.replaceChildren(el('p', { class: 'muted petit', text: D.mistral ? 'Calcul et lecture par l\'IA…' : 'Calcul…' }));
+      try { bilanZone.replaceChildren(blocBilan(await api('bilan', { periode }))); } catch (e) { bilanZone.replaceChildren(el('p', { class: 'muted petit', text: e.message })); }
+      b.disabled = false; } });
+    pageP('Carnet de bord', 'carnet', null,
+      alertes,
+      D.attente ? el('a', { class: 'btn ok large', href: '#/p/valider', text: '★ Valider les étoiles de Faël (' + D.attente + ')' }) : null,
+      formCarnet(() => ecranCarnet()),
+      el('div', { class: 'rangee' }, bilanBtn('semaine'), bilanBtn('mois')), bilanZone,
+      el('a', { class: 'tuile', href: '#/p/carnet/discuter' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🗨️' }), el('span', {}, el('span', { class: 't', text: 'Discuter du carnet avec l\'IA' }), el('span', { class: 's', text: 'Un fil à part, qui connaît les notes récentes' })), el('span', { class: 'fl', text: '›' })),
+      el('a', { class: 'tuile', href: '#/p/etoiles' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🎁' }), el('span', {}, el('span', { class: 't', text: 'Étoiles et récompenses' }), el('span', { class: 's', text: (D.etoiles || 0) + ' étoiles dans la tirelire' })), el('span', { class: 'fl', text: '›' })),
+      el('h3', { text: 'Dernières notes' }), entrees);
+    api('bilan', { periode: 'semaine', sansIA: true }).then(b => { if (b.alertes && b.alertes.length) alertes.replaceChildren(el('div', { class: 'retour info' }, el('b', { text: 'À surveiller cette semaine' }), b.alertes.map(a => el('span', { text: '🟠 ' + a })), el('a', { href: '#/p/carnet/discuter', class: 'petit', text: 'En parler avec l\'IA' }))); }).catch(() => {});
+    try {
+      const l = await api('carnet');
+      entrees.replaceChildren(...(l.length ? l.slice(0, 40).map(e => el('div', { class: 'tuile', style: 'flex-direction:column;align-items:flex-start;gap:4px' },
+        el('span', { class: 'petit muted', text: String(e.horodatage).slice(0, 16).replace('T', ' ') + (e.auteur ? ' · ' + e.auteur : '') }),
+        CRITERES.some(([k]) => e[k]) ? el('span', { class: 'petit', text: CRITERES.filter(([k]) => e[k]).map(([k, lib]) => lib + ' ' + e[k] + '/5').join(' · ') }) : null,
+        e.remarque ? el('span', { style: 'white-space:pre-wrap', text: e.remarque }) : null))
+        : [el('p', { class: 'vide', text: 'Pas encore de note.' })]));
+    } catch (e) { entrees.replaceChildren(el('p', { class: 'muted petit', text: 'Indisponible hors ligne.' })); }
+  }
+  /* Validation des étoiles gagnées, puis note facultative dans le carnet */
+  async function ecranValider() {
+    const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
+    pageP('Valider les étoiles', 'carnet', badgeEtoiles(), zone);
+    let l;
+    try { l = await api('etoilesEnAttente'); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
+    if (!l.length) { D.attente = 0; store.set('donnees', D); zone.replaceChildren(el('p', { class: 'vide', text: 'Rien à valider.' }), formCarnet(() => { location.hash = '#/p/carnet'; }, 'Un mot pour le carnet ?')); return; }
+    const cases = l.map(e => { const c = el('input', { type: 'checkbox', checked: true }); c.eid = e.id; return el('label', { class: 'case' }, c, el('span', {}, el('b', { text: '+' + e.delta + ' ★ ' }), e.motif, el('span', { class: 'muted petit', text: ' · ' + String(e.horodatage).slice(5, 16).replace('T', ' ') }))); });
+    const go = el('button', { class: 'btn ok large', type: 'button', text: 'Valider', onclick: async () => {
+      go.disabled = true;
+      const refuses = cases.filter(c => !c.querySelector('input').checked).map(c => String(c.querySelector('input').eid));
+      try {
+        const r = await api('validerEtoiles', { refuses }); D.etoiles = r.etoiles; D.attente = 0; store.set('donnees', D);
+        toast('Étoiles validées.');
+        zone.replaceChildren(el('div', { class: 'retour ok' }, el('b', { text: 'C\'est fait : ' + D.etoiles + ' étoiles dans la tirelire.' })),
+          formCarnet(() => { location.hash = '#/p/carnet'; }, 'Un mot pour le carnet ? (facultatif)'),
+          el('a', { class: 'btn discret large', href: '#/', text: 'Passer' }));
+      } catch (e) { toast(e.message, true); go.disabled = false; }
+    } });
+    zone.replaceChildren(el('p', { class: 'muted petit', text: 'Décoche ce qui ne doit pas compter (par exemple une séance faite trop vite).' }), ...cases, go);
   }
 
-  function ecranContenus() {
-    const l = contenus().slice().sort((a, b) => String(a.matiere + a.theme + a.titre).localeCompare(b.matiere + b.theme + b.titre, 'fr'));
-    page(tete('Tous les exercices', '#/parents'),
-      el('a', { class: 'btn plein large', href: '#/p/ajouter', text: '➕ Ajouter un exercice' }),
-      el('div', { class: 'liste' }, l.length ? l.map(c => el('a', { class: 'tuile', href: '#/p/contenu/' + c.id },
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[c.type] || '📘' }),
-        el('span', {}, el('span', { class: 't', text: c.titre }), el('span', { class: 's', text: c.matiere + ' › ' + c.theme + ' · ' + (TYPES[c.type] || '') })),
-        el('span', { class: 'fl', text: '›' }))) : el('p', { class: 'vide', text: 'Aucun exercice.' })));
+  /* ---------- Mode parent pendant une séance (cadenas) ---------- */
+  function modeParentSeance(c, q) {
+    const v = voile('Mode parent');
+    const menu = () => v.corps.replaceChildren(
+      el('p', { class: 'muted petit', text: 'La séance de Faël reste ouverte derrière : rien n\'est perdu. Ce que vous modifiez ici compte dès la prochaine séance.' }),
+      el('button', { class: 'btn plein large', type: 'button', text: '💡 Comment lui expliquer autrement ?', onclick: expliquer }),
+      el('button', { class: 'btn large', type: 'button', text: '✏️ Modifier l\'exercice', onclick: () => ecranEditeur(c.id, null, { cible: v.corps, apres: () => { toast('Enregistré. La séance continue ; les changements comptent dès la prochaine.'); v.remove(); } }) }),
+      el('button', { class: 'btn large', type: 'button', text: '💬 Donner un retour à l\'IA', onclick: () => v.corps.replaceChildren(encartDemande(c.id)) }));
+    function expliquer() {
+      const diff = el('textarea', { style: 'min-height:70px' }); diff.value = q ? 'Question en cours : ' + q.enonce + (q.bonne ? ' (réponse : ' + q.bonne + ')' : '') : '';
+      const res = el('div', { class: 'liste' });
+      const go = el('button', { class: 'btn plein', type: 'button', text: 'Proposer 3 façons d\'expliquer', disabled: !D.mistral, onclick: async () => {
+        go.disabled = true; res.replaceChildren(el('p', { class: 'muted petit', text: 'L\'IA réfléchit…' }));
+        try {
+          const r = await api('expliquerPourParents', { id: c.id, difficulte: diff.value.trim() });
+          res.replaceChildren(...r.approches.map((a, k) => el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:6px' },
+            el('b', { text: (k + 1) + '. ' + a.titre }), el('span', { text: a.comment || a.idee || '' }), a.exemple ? el('span', { class: 'aide' }, el('b', { text: 'À dire : ' }), a.exemple) : null)),
+            r.piege ? el('p', { class: 'alerte', text: '⚠️ Piège fréquent : ' + r.piege }) : null);
+        } catch (e) { res.replaceChildren(el('p', { class: 'muted petit', text: e.message })); }
+        go.disabled = false;
+      } });
+      v.corps.replaceChildren(el('label', { class: 'champ' }, 'Ce qui coince (facultatif)', diff), go, res, el('button', { class: 'btn discret', type: 'button', text: '‹ Retour', onclick: menu }));
+    }
+    codeDansVoile(v, menu);
   }
 
-  function ecranAjouter() {
-    page(tete('Ajouter un exercice', '#/parents'),
-      el('h3', { text: 'Saisie directe' }),
-      el('div', { class: 'liste' }, Object.keys(TYPES).map(ty => el('a', { class: 'tuile', href: '#/p/nouveau/' + ty },
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[ty] }), el('span', {}, el('span', { class: 't', text: TYPES[ty] }), el('span', { class: 's', text: AIDES_TYPES[ty] })), el('span', { class: 'fl', text: '›' })))),
-      el('h3', { text: 'Préparé avec l\'IA' }),
-      el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
-        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone ; l\'IA quand la clé sera ajoutée' })), el('span', { class: 'fl', text: '›' })));
-  }
-  const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
 
   /* Conversion données <-> texte saisi */
   const versTexte = {
@@ -539,9 +781,11 @@
   };
 
   let brouillon = null; /* contenu préparé par Mistral, pas encore enregistré */
-  function ecranEditeur(id, typeNouveau) {
+  function ecranEditeur(id, typeNouveau, opts) {
+    /* opts.cible : affichage dans une fenêtre par-dessus la séance ; opts.apres : suite après enregistrement */
+    const rendu = opts && opts.cible ? (t, ...k) => opts.cible.replaceChildren(el('div', { class: 'editeur-voile' }, ...k)) : page;
     const c = id ? contenu(id) : (brouillon && brouillon.type === typeNouveau ? brouillon : { type: typeNouveau, matiere: 'Français', theme: '', titre: '', donnees: {}, statut: 'à valider', source: 'saisie directe' });
-    if (!c) { page(tete('Exercice', '#/p/contenus'), el('p', { class: 'vide', text: 'Introuvable.' })); return; }
+    if (!c) { rendu(tete('Exercice', '#/'), el('p', { class: 'vide', text: 'Introuvable.' })); return; }
     const d = c.donnees || {}, ty = c.type;
     const titre = el('input', { value: c.titre || '', placeholder: 'Ex. : Dictée du 9 novembre' });
     const matiere = el('select', {}, [...new Set([...MATIERES, c.matiere].filter(Boolean))].map(m => el('option', { value: m, text: m, selected: m === c.matiere })));
@@ -571,10 +815,10 @@
       const o = objet(statut);
       if (!o.titre) return toast('Il manque le titre.', true);
       if (!questions(o).length) return toast('Le contenu est vide ou incomplet.', true);
-      try { const r = await api('enregistrerContenu', { contenu: o }); brouillon = null; await charger(); toast('Enregistré : Faël peut le faire.'); puis ? puis(r) : (location.hash = '#/p/contenu/' + r.id); }
+      try { const r = await api('enregistrerContenu', { contenu: o }); brouillon = null; await charger(); toast('Enregistré : Faël peut le faire.'); puis ? puis(r) : opts && opts.apres ? opts.apres(r) : (location.hash = '#/p/contenu/' + r.id); }
       catch (e) { toast(e.message, true); }
     }
-    page(tete(id ? 'Modifier' : 'Nouvel exercice', id ? '#/p/contenus' : '#/p/ajouter'),
+    rendu(tete(id ? 'Modifier' : 'Nouvel exercice', id ? '#/' : '#/p/exercices'),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('p', { class: 'muted petit', text: TYPES[ty] + ' · ' + (c.source || '') }),
         el('label', { class: 'champ' }, 'Titre', titre),
@@ -583,14 +827,29 @@
         el('label', { class: 'champ' }, 'Je retiens (facultatif)', el('span', { class: 'aide-champ', text: 'Une carte par bloc : 1re ligne = titre, puis le texte, et « Ex : » pour un exemple.' }), retiens),
         c.texteLu ? el('details', { class: 'lu' }, el('summary', { text: 'Le texte de départ' }), el('pre', { text: c.texteLu })) : null),
       el('div', { class: 'rangee' },
-        el('button', { class: 'btn', type: 'button', text: 'Essayer', onclick: () => sauver('validé', r => { location.hash = '#/essai/' + r.id; }) }),
+        opts ? null : el('button', { class: 'btn', type: 'button', text: 'Essayer', onclick: () => sauver('validé', r => { location.hash = '#/essai/' + r.id; }) }),
         el('button', { class: 'btn plein', type: 'button', text: 'Enregistrer', onclick: () => sauver('validé') })),
-      id ? el('a', { class: 'btn discret large', href: '#/p/retour/' + c.id, text: 'Donner un retour à l\'IA sur cet exercice' }) : null,
-      id ? el('button', { class: 'btn discret large', type: 'button', text: 'Archiver (Faël ne le verra plus)', onclick: async () => {
+      id ? blocVersions(c.id) : null,
+      id && !opts ? el('a', { class: 'btn discret large', href: '#/p/retour/' + c.id, text: 'Donner un retour à l\'IA sur cet exercice' }) : null,
+      id && !opts ? el('button', { class: 'btn discret large', type: 'button', text: 'Archiver (Faël ne le verra plus)', onclick: async () => {
         if (!confirm('Archiver cet exercice ?')) return;
-        try { await api('statutContenu', { id: c.id, statut: 'archivé' }); await charger(); location.hash = '#/p/contenus'; } catch (e) { toast(e.message, true); } } }) : null);
+        try { await api('statutContenu', { id: c.id, statut: 'archivé' }); await charger(); location.hash = '#/'; } catch (e) { toast(e.message, true); } } }) : null);
   }
-
+  /* Chaque enregistrement garde la version précédente : on peut revenir en arrière */
+  function blocVersions(id) {
+    const zone = el('div', { class: 'liste' });
+    const d = el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: '🕘 Versions précédentes' }), zone);
+    d.addEventListener('toggle', async () => {
+      if (!d.open) return; zone.replaceChildren(el('p', { class: 'muted petit', text: 'Chargement…' }));
+      try {
+        const l = await api('versions', { id });
+        zone.replaceChildren(...(l.length ? l.map(v => el('div', { class: 'tuile' }, el('span', {}, el('span', { class: 't', text: v.titre }), el('span', { class: 's', text: String(v.horodatage).slice(0, 16).replace('T', ' ') + (v.source ? ' · ' + v.source : '') })),
+          el('button', { class: 'btn discret', style: 'margin-left:auto', type: 'button', text: 'Restaurer', onclick: async () => { if (!confirm('Revenir à cette version ? La version actuelle sera gardée dans l\'historique.')) return; try { await api('restaurerVersion', { id, horodatage: v.horodatage }); await charger(); toast('Version restaurée.'); location.hash = '#/p/contenu/' + id; router(); } catch (e) { toast(e.message, true); } } })))
+          : [el('p', { class: 'muted petit', text: 'Pas encore de version précédente.' })]));
+      } catch (e) { zone.replaceChildren(el('p', { class: 'muted petit', text: 'Indisponible hors ligne.' })); }
+    });
+    return d;
+  }
   /* OCR sur le téléphone (Tesseract, libre) : la photo ne quitte pas l'appareil */
   let tesseract = null;
   function chargerTesseract() {
@@ -606,9 +865,11 @@
   }
 
   function ecranGenerer() {
+    const lien = prepa; prepa = null;
     const ia = D.mistral, nomIA = D.ia ? 'l\'IA (Mistral via ' + D.ia + ')' : 'l\'IA';
     const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })));
     const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou lis une photo avec les boutons ci-dessus.' });
+    if (lien && lien.texte) texte.value = lien.texte;
     const precision = el('input', { placeholder: 'Ex. : seulement les mots en bleu ; 10 questions faciles' });
     const photo = el('input', { type: 'file', accept: 'image/*' });
     const apercu = el('div'), etat = el('p', { class: 'muted petit' });
@@ -633,11 +894,16 @@
       try {
         const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
         const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
+        if (lien && lien.tache) {
+          const t = lien.tache; t.contenu = c.id; (t.besoins || []).forEach(b => { if (/exercice/.test(b.libelle) || (image && /photo/.test(b.libelle))) b.fait = true; });
+          try { await api('enregistrerTache', { tache: t }); } catch (e) { /* le lien se refera à la main */ }
+          await charger(); toast('Prêt et relié à la tâche « ' + t.titre + ' ».'); location.hash = lien.retour || '#/p/semaine'; return;
+        }
         await charger(); toast('Prêt : Faël peut le faire. Tu peux le relire ou l\'essayer.');
         location.hash = '#/p/contenu/' + c.id;
       } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer l\'exercice avec l\'IA'; }
     } });
-    page(tete('Photo ou texte', '#/p/ajouter'),
+    page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Photo ou texte', (lien && lien.retour) || '#/p/exercices'),
       ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La lecture sur le téléphone marche déjà.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('label', { class: 'champ' }, '1. Photo de la leçon (facultatif)', photo), apercu,
@@ -654,36 +920,10 @@
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok({ b64: c.toDataURL('image/jpeg', 0.85).split(',')[1], apercu: c.toDataURL('image/jpeg', 0.4) }); };
       img.onerror = () => ko(new Error('Image illisible.')); img.src = url; });
   }
-
-  function ecranDevoirsParents() {
-    const date = el('input', { type: 'date', value: jour() }), titre = el('input', { value: 'Mes devoirs du jour' });
-    const etapes = el('div', { class: 'liste' });
-    const ligne = (e = {}) => {
-      const t = el('input', { value: e.texte || '', placeholder: 'Ex. : Apprendre les mots en bleu' }), m = el('input', { type: 'number', min: 1, max: 60, value: e.minutes || 10, 'aria-label': 'Minutes' });
-      const s = el('select', { 'aria-label': 'Exercice lié' }, el('option', { value: '', text: 'Pas d\'exercice lié' }), contenus().map(c => el('option', { value: c.id, text: c.titre, selected: String(c.id) === String(e.contenu) })));
-      const b = el('div', { class: 'etape' }, t, m, s); b.lire = () => ({ texte: t.value.trim(), minutes: Number(m.value) || 10, contenu: s.value || '' }); return b;
-    };
-    const existant = (D.devoirs || []).find(d => d.date === jour());
-    (existant ? existant.etapes : [{}, {}]).forEach(e => etapes.append(ligne(e)));
-    if (existant) titre.value = existant.titre || titre.value;
-    date.addEventListener('change', () => { const x = (D.devoirs || []).find(d => d.date === date.value); etapes.replaceChildren(...(x ? x.etapes : [{}, {}]).map(ligne)); });
-    page(tete('Mes devoirs du jour', '#/parents'),
-      el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Date', date), el('label', { class: 'champ' }, 'Titre', titre)),
-        el('p', { class: 'muted petit', text: 'Des étapes courtes (5 à 15 minutes), la plus facile en premier. Faël coche chaque étape et gagne 2 étoiles.' }),
-        etapes, el('button', { class: 'btn discret', type: 'button', text: '+ Ajouter une étape', onclick: () => etapes.append(ligne()) })),
-      el('button', { class: 'btn plein large', type: 'button', text: 'Enregistrer', onclick: async () => {
-        const x = (D.devoirs || []).find(d => d.date === date.value);
-        const ets = [...etapes.children].map(b => b.lire()).filter(e => e.texte);
-        if (!ets.length) return toast('Ajoute au moins une étape.', true);
-        try { await api('enregistrerDevoirs', { devoirs: { id: x && x.id, date: date.value, titre: titre.value.trim(), etapes: ets } }); await charger(); toast('Enregistré.'); location.hash = '#/parents'; } catch (e) { toast(e.message, true); }
-      } }));
-  }
-
   async function ecranEtoiles() {
     const nom = el('input', { placeholder: 'Ex. : 15 minutes de jeu' }), cout = el('input', { type: 'number', min: 1, value: 10 });
     const hist = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    page(tete('Étoiles et récompenses', '#/parents', badgeEtoiles()),
+    pageP('Étoiles et récompenses', 'carnet', badgeEtoiles(),
       el('h3', { text: 'Échanger' }),
       el('div', { class: 'liste' }, (D.recompenses || []).map(r => el('div', { class: 'tuile' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🎁' }),
         el('span', {}, el('span', { class: 't', text: r.nom }), el('span', { class: 's', text: r.cout + ' étoiles' })),
@@ -699,40 +939,21 @@
     try { const h = await api('historiqueEtoiles'); hist.replaceChildren(...(h.length ? h.slice(0, 30).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16) }))) : [el('p', { class: 'vide', text: 'Rien pour l\'instant.' })])); }
     catch (e) { hist.replaceChildren(el('p', { class: 'muted petit', text: 'Historique indisponible hors ligne.' })); }
   }
-
-  async function ecranJournal() {
-    const sel = (lib, opts) => { const s = el('select', {}, el('option', { value: '', text: '—' }), opts.map(o => el('option', { value: o, text: o }))); return [el('label', { class: 'champ' }, lib, s), s]; };
-    const [lD, sD] = sel('Devoirs', ['faciles', 'moyens', 'difficiles']), [lS, sS] = sel('Sommeil', ['bon', 'moyen', 'mauvais']), [lH, sH] = sel('Humeur', ['bonne', 'moyenne', 'difficile']);
-    const rem = el('textarea', { style: 'min-height:90px', placeholder: 'Ce qui a marché, ce qui a coincé…' }), date = el('input', { type: 'date', value: jour() });
-    const liste = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    let obs = [];
-    page(tete('Journal d\'observation', '#/parents'),
-      el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
-        el('label', { class: 'champ' }, 'Date', date), el('div', { class: 'grille2' }, lD, lS), lH, el('label', { class: 'champ' }, 'Remarque', rem),
-        el('button', { class: 'btn plein', type: 'button', text: 'Noter', onclick: async () => { try { await api('ajouterObservation', { observation: { date: date.value, devoirs: sD.value, sommeil: sS.value, humeur: sH.value, remarque: rem.value.trim() } }); toast('Noté.'); ecranJournal(); } catch (e) { toast(e.message, true); } } })),
-      el('button', { class: 'btn discret large', type: 'button', text: 'Copier le journal', onclick: async () => {
-        const t = obs.map(o => [o.date, 'devoirs ' + (o.devoirs || '—'), 'sommeil ' + (o.sommeil || '—'), 'humeur ' + (o.humeur || '—'), o.remarque].filter(Boolean).join(' · ')).join('\n');
-        try { await navigator.clipboard.writeText(t); toast('Copié.'); } catch (e) { toast('Copie impossible sur cet appareil.', true); } } }),
-      el('h3', { text: 'Dernières notes' }), liste);
-    try { obs = await api('observations'); liste.replaceChildren(...(obs.length ? obs.map(o => el('div', { class: 'tuile', style: 'flex-direction:column;align-items:flex-start' }, el('b', { text: o.date }), el('span', { class: 's', text: ['devoirs ' + (o.devoirs || '—'), 'sommeil ' + (o.sommeil || '—'), 'humeur ' + (o.humeur || '—')].join(' · ') }), o.remarque ? el('span', { text: o.remarque }) : null)) : [el('p', { class: 'vide', text: 'Pas encore de note.' })])); }
-    catch (e) { liste.replaceChildren(el('p', { class: 'muted petit', text: 'Indisponible hors ligne.' })); }
-  }
-
   /* Conseils : l'essentiel, l'approfondi, la mise en œuvre dans l'appli (avec contrôle), et une discussion avec l'IA */
-  let ongletConseils = 'essentiel', cacheConseils = null;
+  let ongletConseils = 'discuter', cacheConseils = null;
   async function ecranConseils(onglet) {
     if (onglet) ongletConseils = onglet;
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    const ONG = [['essentiel', 'L\'essentiel'], ['approfondi', 'Approfondir'], ['appli', 'Dans l\'appli'], ['discuter', 'Discuter']];
+    const ONG = [['discuter', 'Discuter'], ['essentiel', 'L\'essentiel'], ['approfondi', 'Approfondir'], ['appli', 'Dans l\'appli']];
     const chips = el('div', { class: 'chips', style: 'flex-wrap:wrap;overflow:visible' }, ONG.map(([k, lib]) => el('button', { type: 'button', 'aria-pressed': String(k === ongletConseils), text: lib, onclick: () => ecranConseils(k) })));
-    page(tete('Conseils', '#/parents'), chips, zone);
+    pageP('Conseils', 'conseils', null, chips, zone);
     try {
       if (!cacheConseils) cacheConseils = await api('conseils');
       const c = cacheConseils;
       if (ongletConseils === 'essentiel') zone.replaceChildren(...c.essentiel.map(s => el('section', { class: 'carte' }, el('h2', { text: s.titre }), el('ul', {}, s.points.map(p => el('li', { text: p }))))),
         el('p', { class: 'muted petit', text: 'Pour aller plus loin : onglet « Approfondir ». Recherches vérifiées le ' + c.maj + '.' }));
       else if (ongletConseils === 'approfondi') zone.replaceChildren(
-        el('p', { class: 'muted petit', text: 'Synthèse des recommandations de la HAS (2024) et des méta-analyses récentes, avec les tailles d\'effet. Recherches vérifiées le ' + c.maj + '. Le doc « TDA et apprentissages de Faël » dans Claude contient tous les liens.' }),
+        el('p', { class: 'muted petit', text: 'Synthèse des recommandations de la HAS (2024) et des méta-analyses récentes, avec les tailles d\'effet. Recherches vérifiées le ' + c.maj + '. Le document de recherche dans Claude contient tous les liens.' }),
         ...c.approfondi.map(s => el('details', { class: 'carte', open: s === c.approfondi[0] }, el('summary', { style: 'cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center', text: s.titre }),
           s.texte ? el('p', { style: 'margin:8px 0', text: s.texte }) : null, el('ul', {}, s.points.map(p => el('li', { style: 'margin:6px 0', text: p }))))));
       else if (ongletConseils === 'appli') await ongletAppli(c, zone);
@@ -767,9 +988,9 @@
     controle.replaceChildren(...lignes);
   }
 
-  async function ongletDiscuter(zone) {
+  async function ongletDiscuter(zone, espace) {
     const fil = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement de la discussion…' }));
-    const ta = el('textarea', { style: 'min-height:90px', placeholder: 'Ex. : comment présenter le système d\'étoiles sans qu\'il devienne du chantage ? Que dit la recherche sur les devoirs le soir ?' });
+    const ta = el('textarea', { style: 'min-height:90px', placeholder: espace === 'carnet' ? 'Ex. : la concentration baisse depuis trois jours, qu\'est-ce qu\'on peut ajuster ? Que retenir de la semaine ?' : 'Ex. : comment présenter le système d\'étoiles sans qu\'il devienne du chantage ? Que dit la recherche sur les devoirs le soir ?' });
     const web = el('input', { type: 'checkbox', disabled: D.ia !== 'Mammouth' });
     const bulle = m => el('div', { class: 'retour ' + (m.role === 'parent' ? 'info' : 'ok'), style: m.role === 'parent' ? 'margin-left:24px' : 'margin-right:12px' },
       el('b', { class: 'petit', text: m.role === 'parent' ? 'Vous' : 'IA' + (m.modele ? ' · ' + m.modele : '') }), el('span', { style: 'white-space:pre-wrap', text: m.texte }),
@@ -778,22 +999,21 @@
       const q = ta.value.trim(); if (!q) return ta.focus();
       go.disabled = true; go.textContent = web.checked ? 'Recherche sur le web…' : 'Réflexion…';
       fil.append(bulle({ role: 'parent', texte: q }));
-      try { const r = await api('discuter', { message: q, web: web.checked }); ta.value = ''; fil.append(bulle({ role: 'ia', texte: r.texte, sources: r.sources, modele: r.modele })); fil.lastChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      try { const r = await api('discuter', { message: q, web: web.checked, espace }); ta.value = ''; fil.append(bulle({ role: 'ia', texte: r.texte, sources: r.sources, modele: r.modele })); fil.lastChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       catch (e) { toast(e.message, true); fil.lastChild.remove(); }
       go.disabled = false; go.textContent = 'Envoyer';
     } });
     zone.replaceChildren(
-      el('p', { class: 'muted petit', text: 'L\'IA répond à partir de la base de connaissances de cet onglet (recherches vérifiées). Cochez « recherche web » pour qu\'elle cherche aussi en direct : la question part alors vers Perplexity (Sonar, via Mammouth), un service américain.' }),
+      espace === 'carnet' ? null : el('p', { class: 'muted petit', text: 'L\'IA répond à partir de la base de connaissances de cet onglet (recherches vérifiées). Cochez « recherche web » pour qu\'elle cherche aussi en direct : la question part alors vers Perplexity (Sonar, via Mammouth), un service américain.' }),
       fil,
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' }, ta,
         el('label', { style: 'display:flex;gap:10px;align-items:center;min-height:44px' }, web, D.ia === 'Mammouth' ? 'Chercher aussi sur le web (sources citées)' : 'Recherche web : disponible avec Mammouth'),
         go,
-        el('button', { class: 'btn discret', type: 'button', text: 'Nouvelle discussion', onclick: async () => { try { await api('nouveauFil'); ongletDiscuter(zone); } catch (e) { toast(e.message, true); } } })));
+        el('button', { class: 'btn discret', type: 'button', text: 'Nouvelle discussion', onclick: async () => { try { await api('nouveauFil', { espace }); ongletDiscuter(zone, espace); } catch (e) { toast(e.message, true); } } })));
     if (!D.mistral) fil.replaceChildren(el('p', { class: 'vide', text: 'L\'IA n\'est pas encore activée.' }));
-    try { const d = await api('discussion'); fil.replaceChildren(...(d.messages.length ? d.messages.map(bulle) : [el('p', { class: 'vide', text: 'Posez votre première question.' })])); }
+    try { const d = await api('discussion', { espace }); fil.replaceChildren(...(d.messages.length ? d.messages.map(bulle) : [el('p', { class: 'vide', text: 'Posez votre première question.' })])); }
     catch (e) { fil.replaceChildren(el('p', { class: 'vide', text: 'Discussion indisponible hors ligne.' })); }
   }
-
   function ecranReglages() {
     const r = R();
     const sel = (lib, vals, v, fmt) => { const s = el('select', {}, vals.map(x => el('option', { value: x, text: fmt ? fmt(x) : x, selected: String(x) === String(v) }))); return [el('label', { class: 'champ' }, lib, s), s]; };
@@ -802,7 +1022,7 @@
     const [lV, sV] = sel('Lecture à voix haute', ['oui', 'non'], r.voix ? 'oui' : 'non'), [lC, sC] = sel('Mode calme (moins de décor)', ['oui', 'non'], r.calme ? 'oui' : 'non');
     const code = el('input', { type: 'password', inputmode: 'numeric', value: r.codeParents || '', placeholder: 'Aucun', autocomplete: 'off' });
     const resultatTest = el('div', { class: 'petit' });
-    page(tete('Réglages', '#/parents'),
+    pageP('Réglages', 'reglages', null,
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('h2', { text: 'Mode concentration' }), el('div', { class: 'grille2' }, lT, lS), el('div', { class: 'grille2' }, lP, lD), el('div', { class: 'grille2' }, lV, lC),
         el('label', { class: 'champ' }, 'Code parents', el('span', { class: 'aide-champ', text: 'Pour que Faël n\'entre pas dans l\'espace parents. Vide = pas de code.' }), code)),
@@ -814,34 +1034,40 @@
           try { const r = await api('testerCapacites'); resultatTest.replaceChildren(el('p', {}, el('b', { text: 'Texte : ' }), r.texte || '—'), el('p', {}, el('b', { text: 'Lecture de photo : ' }), r.vision || '—'), el('p', {}, el('b', { text: 'OCR Mistral direct : ' }), r.ocrMistral ? 'oui' : 'non (facultatif)'), r.credits ? el('p', { class: 'muted petit', text: (() => { try { const k = JSON.parse(r.credits); const i = k.info || k; const dep = Number(i.spend != null ? i.spend : k.spend); return isNaN(dep) ? 'Compte relié.' : 'Dépensé avec cette clé : ' + dep.toFixed(4) + ' $' + (i.max_budget ? ' sur un plafond de ' + i.max_budget + ' $' : ''); } catch (e) { return 'Compte relié.'; } })() }) : null); }
           catch (e) { resultatTest.textContent = e.message; } bt.disabled = false; } })),
       el('button', { class: 'btn plein large', type: 'button', text: 'Enregistrer', onclick: async () => {
-        try { D.reglages = await api('enregistrerReglages', { reglages: { taille: Number(sT.value), series: Number(sS.value), pauses: sP.value === 'oui', dureePause: Number(sD.value), voix: sV.value === 'oui', calme: sC.value === 'oui', codeParents: code.value.trim() } }); store.set('donnees', D); toast('Enregistré.'); location.hash = '#/parents'; }
-        catch (e) { toast(e.message, true); } } }));
+        try { D.reglages = await api('enregistrerReglages', { reglages: { taille: Number(sT.value), series: Number(sS.value), pauses: sP.value === 'oui', dureePause: Number(sD.value), voix: sV.value === 'oui', calme: sC.value === 'oui', codeParents: code.value.trim() } }); store.set('donnees', D); toast('Enregistré.'); }
+        catch (e) { toast(e.message, true); } } }),
+      el('h3', { text: 'Moteur et suivi' }),
+      el('div', { class: 'liste' },
+        el('a', { class: 'tuile', href: '#/p/demandes' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📨' }), el('span', {}, el('span', { class: 't', text: 'Demandes et retours' }), el('span', { class: 's', text: 'Ce que vous avez demandé à l\'IA, annulable' })), el('span', { class: 'fl', text: '›' })),
+        el('a', { class: 'tuile', href: '#/relier' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🔗' }), el('span', {}, el('span', { class: 't', text: 'Relier l\'appli au moteur' }), el('span', { class: 's', text: 'Une fois par appareil · ' + (D.mistral ? 'IA activée (' + D.ia + ')' : 'IA pas encore activée') })), el('span', { class: 'fl', text: '›' }))));
   }
 
   /* ---------- Routage ---------- */
   async function router() {
     const h = location.hash.replace(/^#\/?/, ''), [a, b, c] = h.split('/');
+    document.querySelectorAll('.voile').forEach(v => v.remove());
     if (a === 'relier' || !store.get('cfg', null)) return ecranRelier();
     if (!D) { app().replaceChildren(el('p', { class: 'vide', text: 'Chargement…' })); try { await charger(); } catch (e) { toast(e.message, true); return ecranRelier(); } }
     if (!a) return ecranAccueil();
     if (a === 'seance') return ecranSeance(b, false);
-    if (a === 'devoirs') return ecranDevoirs(b);
-    if (a === 'parents') return porteParents(() => ecranParents());
+    if (a === 'tache') return ecranTache(b);
+    if (a === 'fini') return ecranFini();
+    if (a === 'parents') return porteParents(() => ecranSemaine());
     if (a === 'essai') return porteParents(() => ecranSeance(b, true));
     if (a === 'p') return porteParents(() => {
-      if (b === 'contenus') return ecranContenus();
-      if (b === 'ajouter') return ecranAjouter();
-      if (b === 'nouveau') return TYPES[c] ? ecranEditeur(null, c) : ecranAjouter();
+      if (b === 'semaine') return ecranSemaine(c);
+      if (b === 'exercices' || b === 'ajouter') return ecranExercices();
+      if (b === 'retour') return ecranExercices(c);
+      if (b === 'nouveau') return TYPES[c] ? ecranEditeur(null, c) : ecranExercices();
       if (b === 'contenu') return ecranEditeur(c);
       if (b === 'generer') return ecranGenerer();
-      if (b === 'devoirs') return ecranDevoirsParents();
+      if (b === 'carnet') return ecranCarnet(c);
+      if (b === 'valider') return ecranValider();
       if (b === 'etoiles') return ecranEtoiles();
-      if (b === 'journal') return ecranJournal();
       if (b === 'conseils') return ecranConseils(c);
       if (b === 'reglages') return ecranReglages();
       if (b === 'demandes') return ecranDemandes();
-      if (b === 'retour') return ecranParents(c);
-      return ecranParents();
+      return ecranSemaine();
     });
     ecranAccueil();
   }
@@ -853,5 +1079,6 @@
   });
   if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
   /* Exposé pour les tests uniquement */
-  window.__cf = { questions, variantes, depuisTexte, versTexte };
+  window.__cf = { questions, variantes, depuisTexte, versTexte, prochainJourEcole, lundiDe };
 })();
+

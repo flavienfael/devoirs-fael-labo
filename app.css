@@ -130,3 +130,54 @@ details.lu pre{white-space:pre-wrap; font:inherit; font-size:.88rem; margin:8px 
 .calme *{animation:none!important; transition:none!important}
 @media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
 @media (max-width:380px){.choix{grid-template-columns:1fr}.grille2{grid-template-columns:1fr}}
+
+/* ---------- v5 : barre unique, onglets parents, semaine, carnet, cadenas ---------- */
+body.avec-onglets .wrap{padding-bottom:96px}
+.onglets{position:fixed; left:0; right:0; bottom:0; z-index:20; display:flex; justify-content:space-around; background:var(--paper); border-top:1.5px solid var(--seyes-bold); padding:6px 4px calc(6px + env(safe-area-inset-bottom)); box-shadow:0 -2px 8px var(--shadow)}
+.onglets a{position:relative; flex:1; max-width:110px; min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-radius:12px; text-decoration:none; color:var(--muted); font-size:1.25rem}
+.onglets a small{font-size:.72rem; font-weight:700}
+.onglets a[aria-current="page"]{color:var(--ink); background:color-mix(in srgb, var(--accent) 16%, transparent)}
+.onglets .pastille{position:absolute; top:6px; right:calc(50% - 18px); width:10px; height:10px; border-radius:50%; background:var(--accent)}
+.tete-droite{display:flex; align-items:center; gap:8px}
+.etoiles .attente{font-size:.75rem; font-weight:700; margin-left:4px; opacity:.75}
+.mode-parent{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; border-radius:12px; background:color-mix(in srgb, var(--accent) 12%, var(--paper)); font-weight:700}
+.mode-parent .btn{min-height:40px}
+.ligne-tuile{display:flex; align-items:center; gap:8px} .ligne-tuile .tuile{flex:1; min-width:0}
+.actions-recherche{display:flex; flex-direction:column; gap:8px; padding:12px; border-radius:12px; border:2px dashed var(--seyes-bold)}
+.actions-recherche .btn{justify-content:flex-start; text-align:left}
+.tuile.parents{border:2px solid var(--seyes-bold); margin-top:4px}
+a.case{text-decoration:none; color:inherit}
+.carte.devoirs{display:flex; flex-direction:column; gap:8px; border:2px solid var(--accent)}
+.carte.devoirs h2{margin:0}
+.semaine-nav{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.semaine-nav b{font-size:1.05rem; text-align:center}
+.sommaire{cursor:pointer; font-weight:700; min-height:44px; display:flex; align-items:center}
+.jour{display:flex; flex-direction:column; gap:8px}
+.jour.aujourdhui h3{color:var(--accent)}
+.tache{display:flex; flex-direction:column; gap:8px}
+.tache.prete{box-shadow:inset 4px 0 0 var(--good), 0 1px 2px var(--shadow)}
+.tache-tete{display:flex; align-items:center; justify-content:space-between; gap:8px}
+.besoins{display:flex; flex-wrap:wrap; gap:6px}
+.besoin{min-height:40px; padding:4px 12px; border-radius:999px; border:2px solid var(--seyes-bold); background:var(--paper); font-weight:600; font-size:.9rem}
+.besoin.ok{background:var(--good); border-color:var(--good); color:var(--paper)}
+.tache select{min-height:44px; flex:1; min-width:0}
+.tache .note{min-height:44px; font-size:.95rem}
+.besoins-choix{border:0; padding:0; margin:0; display:flex; flex-wrap:wrap; gap:6px 14px}
+.besoins-choix legend{font-weight:700; margin-bottom:4px}
+.besoins-choix label{display:flex; align-items:center; gap:6px; min-height:40px}
+.note-ligne{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap}
+.notes{display:flex; gap:6px}
+.notes button{width:44px; height:44px; border-radius:10px; border:2px solid var(--seyes-bold); background:var(--paper); font-weight:700}
+.notes button[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.moyennes{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; text-align:center}
+.moyennes b{display:block; font-size:1.4rem} .moyennes small{color:var(--muted); font-size:.75rem}
+.alerte{margin:0; padding:8px 12px; border-radius:10px; background:var(--warn-soft); color:var(--ink)}
+label.case input{width:26px; height:26px; flex:none}
+.voile{position:fixed; inset:0; z-index:40; background:rgba(0,0,0,.45); display:flex; align-items:flex-end; justify-content:center}
+.voile .feuille{background:var(--desk); width:100%; max-width:720px; max-height:92vh; overflow:auto; border-radius:18px 18px 0 0; padding:12px 16px calc(16px + env(safe-area-inset-bottom))}
+.voile .corps{display:flex; flex-direction:column; gap:12px}
+.editeur-voile{display:flex; flex-direction:column; gap:12px}
+@media (min-width:760px){ .voile{align-items:center} .voile .feuille{border-radius:18px} }
+:where(textarea, select, input:not([type=checkbox]):not([type=file]):not([type=search]):not([type=radio])){width:100%; min-height:48px; border:2px solid var(--seyes-bold); border-radius:12px; background:var(--paper); padding:10px 12px; font-size:17px}
+:where(textarea){resize:vertical; line-height:1.45}
+.note-ligne{flex-direction:column; align-items:flex-start}
