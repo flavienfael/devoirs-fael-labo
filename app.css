@@ -206,3 +206,5 @@ label.case input{width:26px; height:26px; flex:none}
 .defi-bilan{font-weight:700}
 .feuille.defi{background:var(--paper); border:3px solid var(--star); box-shadow:0 10px 30px rgba(0,0,0,.35)}
 .feuille.defi .grand{font-size:3rem; line-height:1}
+.aides{display:flex; flex-direction:column; gap:10px}
+.aides:empty, .aides > div:empty{display:none}

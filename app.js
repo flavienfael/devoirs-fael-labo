@@ -451,7 +451,8 @@
       etat.essai = 1; etat.tq = Date.now();
       const points = el('div', { class: 'points', 'aria-hidden': 'true' }, lot.map((_, k) => el('i', { class: k < etat.i ? 'fait' : k === etat.i ? 'cours' : '' })));
       const libSerie = q.defi ? '🏆 Défi · question ' + (etat.i + 1) + ' sur ' + lot.length : q.revoir ? 'Je revois mes erreurs' : 'Série ' + (etat.s + 1 - (series[0][0] && series[0][0].revoir ? 1 : 0)) + ' sur ' + series.filter(l => !l[0].revoir).length;
-      const zoneRep = el('div'), zoneRetour = el('div'), zoneAide = el('div');
+      const zoneRep = el('div'), zoneRetour = el('div'), zoneAide = el('div'), zoneExpl = el('div');
+      /* Coup de pouce et explication de l'IA ont chacun leur place : on peut voir les deux en même temps */
       const ecouter = () => dire([{ texte: q.consigne }, ...(q.dire || [])]);
       const bExpl = el('button', { class: 'btn discret', type: 'button', text: (vues[q.cle] || 0) ? '🔄 Explique-moi encore autrement' : '💬 Explique-moi autrement', onclick: expliquer });
       const outils = el('div', { class: 'outils' },
@@ -463,7 +464,7 @@
         vues[q.cle] = k + 1; bExpl.textContent = '🔄 Explique-moi encore autrement';
         const montrer = i => {
           const t = liste[i];
-          zoneAide.replaceChildren(el('div', { class: 'explique', role: 'status' },
+          zoneExpl.replaceChildren(el('div', { class: 'explique', role: 'status' },
             el('div', { class: 'explique-tete' }, el('b', { text: '💬 Une autre façon de comprendre' }), el('small', { text: (i + 1) + ' sur 4' })),
             el('p', { text: t }), el('button', { class: 'btn discret', type: 'button', text: '🔊 Écouter l\'explication', onclick: () => dire([{ texte: t }]) })));
           dire([{ texte: t }]);
@@ -471,11 +472,11 @@
         if (k >= 4) return montrer(k % 4);
         if (liste[k]) return montrer(k);
         bExpl.disabled = true;
-        zoneAide.replaceChildren(el('div', { class: 'explique attente', role: 'status' }, el('p', { text: 'Je cherche une façon de t\'expliquer…' })));
+        zoneExpl.replaceChildren(el('div', { class: 'explique attente', role: 'status' }, el('p', { text: 'Je cherche une façon de t\'expliquer…' })));
         try {
           const r2 = await api('expliquerAutrement', { contenu: c.id, consigne: String(q.consigne || '').replace(/\*\*/g, ''), question: q.enonce || '', choix: q.choix || q.etiquettes || [], bonne: q.bonne, n: k + 1, precedentes: liste.slice() });
           liste[k] = r2.texte; montrer(k);
-        } catch (e) { vues[q.cle] = k; zoneAide.replaceChildren(el('div', { class: 'aide', text: 'Pas d\'explication pour l\'instant (réseau ?). Essaie le coup de pouce.' })); }
+        } catch (e) { vues[q.cle] = k; zoneExpl.replaceChildren(el('div', { class: 'aide', text: 'Pas d\'explication pour l\'instant (réseau ?). Essaie le coup de pouce.' })); }
         bExpl.disabled = false;
       }
       function repondre(rep, bouton) {
@@ -495,7 +496,7 @@
           if (!test && !q.defi) noterErreur(c.id, q.cle);
           if (bouton) bouton.classList.add('faux');
           verrouiller(true);
-          zoneAide.replaceChildren();
+          zoneAide.replaceChildren(); zoneExpl.replaceChildren();
           zoneRetour.replaceChildren(el('div', { class: 'retour ko', role: 'status' },
             el('b', { class: 'titre', text: 'On regarde ensemble' }), el('span', {}, 'La bonne réponse : ', el('b', { text: q.bonne })), el('span', { text: q.explication }),
             el('span', { class: 'muted petit', text: q.defi ? 'C\'était un vrai défi : bravo d\'avoir essayé !' : 'Cette question reviendra pour t\'entraîner.' }),
@@ -524,7 +525,7 @@
         el('section', { class: 'carte cahier' },
           el('p', { class: 'consigne' }, el('span', { class: 'lib', text: 'Consigne' }), ' : ', riche(q.consigne)),
           !q.enonce ? null : el('p', { class: 'enonce' }, q.enonce.split('____').map((p, k, a) => [p, k < a.length - 1 ? el('span', { class: 'trou', 'aria-label': 'à compléter' }) : null])),
-          outils, zoneAide, zoneRep, zoneRetour));
+          outils, el('div', { class: 'aides' }, zoneAide, zoneExpl), zoneRep, zoneRetour));
       if (R().voix && etat.i === 0) setTimeout(ecouter, 300);
     }
 
