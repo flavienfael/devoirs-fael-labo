@@ -218,6 +218,13 @@
   const erreursDues = cid => Object.values(store.get('erreurs', {})).filter(x => x.cid === cid && x.due <= jour());
 
   /* ---------- Rendu général ---------- */
+  /* Icônes dessinées (design D) */
+  const ICO = {
+    son: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z" fill="currentColor"/><path d="M16 9a4 4 0 010 6M18.5 6.5a7.5 7.5 0 010 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
+    ampoule: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9V16h7v-2.1A6 6 0 0012 3z" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    bulle: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>'
+  };
+  const outil = (ico, lib, cls, onclick) => el('button', { class: 'btn outil ' + (cls || ''), type: 'button', onclick }, el('span', { class: 'ico', html: ICO[ico] }), el('span', { class: 'lib-outil', text: lib }));
   const app = () => $('#app');
   function page(...k) { app().replaceChildren(el('div', { class: 'wrap' }, ...k)); window.scrollTo(0, 0); document.body.classList.toggle('calme', !!R().calme); document.body.classList.remove('avec-onglets'); }
   function tete(titre, retour, droite) {
@@ -591,14 +598,14 @@
       const zoneRep = el('div'), zoneRetour = el('div'), zoneAide = el('div'), zoneExpl = el('div');
       /* Coup de pouce et explication de l'IA ont chacun leur place : on peut voir les deux en même temps */
       const ecouter = () => dire([{ texte: q.consigne }, ...(q.dire || [])]);
-      const bExpl = el('button', { class: 'btn discret', type: 'button', text: (vues[q.cle] || 0) ? '🔄 Explique-moi encore autrement' : '💬 Explique-moi autrement', onclick: expliquer });
+      const bExpl = outil('bulle', (vues[q.cle] || 0) ? 'Encore autrement' : 'Explique-moi', 'o-expl', expliquer);
       const outils = el('div', { class: 'outils' },
-        el('button', { class: 'btn discret', type: 'button', text: '🔊 Écouter', onclick: ecouter }),
-        q.defi ? null : el('button', { class: 'btn discret', type: 'button', text: '💡 Coup de pouce', onclick: () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide)) }),
+        outil('son', 'Écouter', 'o-son', ecouter),
+        q.defi ? null : outil('ampoule', 'Coup de pouce', 'o-pouce', () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide))),
         q.defi || !D.mistral ? null : bExpl);
       async function expliquer() {
         const k = vues[q.cle] || 0, liste = explications[q.cle] = explications[q.cle] || [];
-        vues[q.cle] = k + 1; bExpl.textContent = '🔄 Explique-moi encore autrement';
+        vues[q.cle] = k + 1; bExpl.querySelector('.lib-outil').textContent = 'Encore autrement';
         const montrer = i => {
           const t = liste[i];
           zoneExpl.replaceChildren(el('div', { class: 'explique', role: 'status' },
