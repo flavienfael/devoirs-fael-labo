@@ -317,6 +317,7 @@
 
     page(tete('Mes cahiers', null, badgeEtoiles()),
       parentOk ? el('div', { class: 'mode-parent' }, el('span', { text: '🔓 Mode parent' }), el('button', { class: 'btn discret', type: 'button', text: 'Verrouiller', onclick: () => { parentOk = false; ecranAccueil(); } })) : null,
+      carteTirelire(),
       blocDevoirs,
       el('div', { class: 'recherche', role: 'search' }, el('span', { class: 'loupe', 'aria-hidden': 'true', text: '🔍' }), q, x),
       actions, chips, liste,
@@ -343,9 +344,8 @@
       t.statut = 'fait'; store.set('donnees', D);
       envoyer({ resultats: [], etoiles: 2, motif: 'Devoirs : ' + t.titre });
       D.attente = (D.attente || 0) + 2; store.set('donnees', D);
-      toast('+2 étoiles ★ à faire valider');
       api('enregistrerTache', { tache: Object.assign({}, t, { statut: 'fait', source: 'coché par Faël' }) }).catch(() => {});
-      location.hash = '#/';
+      ecranFinTache(t);
     } });
     page(tete(t.titre, '#/', badgeEtoiles()), el('section', { class: 'carte pause' },
       el('p', { class: 'muted petit', text: (t.matiere ? t.matiere + ' · ' : '') + 'pour ' + nomJour(t.jour) }),
@@ -353,6 +353,16 @@
       svg, el('div', { class: 'rangee', style: 'width:100%' }, lancer,
         t.contenu && contenu(t.contenu) ? el('a', { class: 'btn plein', href: '#/seance/' + t.contenu, text: 'Ouvrir l\'exercice' }) : null), fini));
     dire([{ texte: t.titre + '. ' + (t.details || '') }]);
+  }
+
+  /* Après un devoir coché : mêmes choix qu'en fin d'exercice */
+  function ecranFinTache(t) {
+    page(tete('Bravo !', '#/', badgeEtoiles()), el('section', { class: 'carte bilan' },
+      el('span', { class: 'grand', 'aria-hidden': 'true', text: '✅' }), el('h2', { text: 'Devoir fait !' }), el('p', { text: t.titre }),
+      el('span', { class: 'gros', text: '+2 ★' }), el('p', { class: 'muted petit', text: 'Tes étoiles attendent que papa ou maman les valide.' }),
+      el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }),
+      el('a', { class: 'btn large', href: '#/', text: 'J\'ai encore des devoirs à faire ici' })));
+    dire([{ texte: 'Bravo, devoir fait ! Deux étoiles de plus.' }]);
   }
 
   /* « J'ai fini ! » : Faël voit ses étoiles tout de suite, un parent les valide ensuite */
@@ -398,7 +408,7 @@
   const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
   function navParents(actif) {
     return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
-      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'carnet' && D && D.attente ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
+      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'carnet' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
   }
   const moteurAJour = () => !!(D && Array.isArray(D.taches));
   function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), moteurAJour() ? null : el('p', { class: 'alerte', text: '⚠️ Le moteur n\'est pas à jour : redéploie le code v5.2 dans Apps Script (Gérer les déploiements → Nouvelle version). Sans lui, la semaine, le carnet et la validation des étoiles ne marchent pas.' }), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
@@ -775,6 +785,22 @@
         el('p', { class: 'muted petit', text: 'Un fil à part, réservé au carnet : l\'IA connaît les notes et les résultats récents (sans le prénom) et peut vous alerter sur une tendance.' }), zone);
       return ongletDiscuter(zone, 'carnet');
     }
+    const hebdo = el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: '✉️ Bilan automatique du dimanche' }));
+    hebdo.addEventListener('toggle', async () => {
+      if (!hebdo.open || hebdo.dataset.ok) return; hebdo.dataset.ok = '1';
+      const corps = el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:8px' }, el('p', { class: 'muted petit', text: 'Chargement…' })); hebdo.append(corps);
+      const test = el('button', { class: 'btn discret', type: 'button', text: 'M\'envoyer le bilan maintenant (essai)', onclick: async () => {
+        test.disabled = true;
+        try { await api('bilanHebdoMaintenant'); toast('Bilan envoyé : regarde ta boîte mail.'); }
+        catch (e) { toast(/permission|autoris|MailApp/i.test(e.message) ? 'Envoi pas encore autorisé : lance une fois « installerBilanHebdo » dans Apps Script.' : e.message, true); }
+        test.disabled = false; } });
+      let l = [];
+      try { l = await api('derniersBilans'); } catch (e) { /* hors ligne */ }
+      corps.replaceChildren(
+        el('p', { class: 'muted petit', text: 'Chaque dimanche vers 19 h, le moteur t\'envoie par courriel le bilan de la semaine (notes du carnet, exercices, étoiles, alertes, lecture de l\'IA). À activer une fois : dans Apps Script, choisis la fonction « installerBilanHebdo » puis « Exécuter ».' }),
+        l.length ? el('div', { class: 'retour info' }, el('b', { class: 'petit', text: 'Dernier bilan · ' + String(l[0].horodatage).slice(0, 10) }), el('span', { style: 'white-space:pre-wrap', text: l[0].texte })) : el('p', { class: 'muted petit', text: 'Aucun bilan envoyé pour l\'instant.' }),
+        test);
+    });
     const alertes = el('div'), entrees = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' })), bilanZone = el('div');
     const bilanBtn = periode => el('button', { class: 'btn', type: 'button', text: periode === 'mois' ? 'Bilan du mois' : 'Bilan de la semaine', onclick: async ev => {
       const b = ev.currentTarget; b.disabled = true; bilanZone.replaceChildren(el('p', { class: 'muted petit', text: D.mistral ? 'Calcul et lecture par l\'IA…' : 'Calcul…' }));
@@ -784,7 +810,7 @@
       alertes,
       D.attente ? el('a', { class: 'btn ok large', href: '#/p/valider', text: '★ Valider les étoiles de Faël (' + D.attente + ')' }) : null,
       formCarnet(() => ecranCarnet()),
-      el('div', { class: 'rangee' }, bilanBtn('semaine'), bilanBtn('mois')), bilanZone,
+      el('div', { class: 'rangee' }, bilanBtn('semaine'), bilanBtn('mois')), bilanZone, hebdo,
       el('a', { class: 'tuile', href: '#/p/carnet/discuter' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🗨️' }), el('span', {}, el('span', { class: 't', text: 'Discuter du carnet avec l\'IA' }), el('span', { class: 's', text: 'Un fil à part, qui connaît les notes récentes' })), el('span', { class: 'fl', text: '›' })),
       el('a', { class: 'tuile', href: '#/p/etoiles' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🎁' }), el('span', {}, el('span', { class: 't', text: 'Étoiles et récompenses' }), el('span', { class: 's', text: (D.etoiles || 0) + ' étoiles dans la tirelire' })), el('span', { class: 'fl', text: '›' })),
       el('h3', { text: 'Dernières notes' }), entrees);
@@ -1053,27 +1079,124 @@
     } });
     return bt;
   }
-  async function ecranEtoiles() {
-    const nom = el('input', { placeholder: 'Ex. : 15 minutes de jeu' }), cout = el('input', { type: 'number', min: 1, value: 10 });
-    const hist = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    pageP('Étoiles et récompenses', 'carnet', badgeEtoiles(),
-      el('h3', { text: 'Échanger' }),
-      el('div', { class: 'liste' }, (D.recompenses || []).map(r => el('div', { class: 'tuile' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🎁' }),
-        el('span', {}, el('span', { class: 't', text: r.nom }), el('span', { class: 's', text: r.cout + ' étoiles' })),
-        el('button', { class: 'btn', style: 'margin-left:auto;min-height:46px', type: 'button', text: 'Échanger', disabled: (D.etoiles || 0) < Number(r.cout), onclick: async () => {
-          if (!confirm('Échanger ' + r.cout + ' étoiles contre « ' + r.nom + ' » ?')) return;
-          try { const x = await api('echangerRecompense', { id: r.id }); D.etoiles = x.etoiles; store.set('donnees', D); toast('Échangé !'); ecranEtoiles(); } catch (e) { toast(e.message, true); } } })))),
-      el('h3', { text: 'Ajouter une récompense' }),
-      el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' }, el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Récompense', nom), el('label', { class: 'champ' }, 'Coût en étoiles', cout)),
-        el('button', { class: 'btn', type: 'button', text: 'Ajouter', onclick: async () => { try { await api('enregistrerRecompense', { recompense: { nom: nom.value.trim(), cout: Number(cout.value) } }); await charger(); ecranEtoiles(); } catch (e) { toast(e.message, true); } } })),
-      el('h3', { text: 'Ajuster à la main' }),
-      el('div', { class: 'rangee' }, [-5, -1, 1, 5].map(n => el('button', { class: 'btn discret', type: 'button', text: (n > 0 ? '+' : '') + n, onclick: async () => { try { const x = await api('ajusterEtoiles', { delta: n, motif: 'ajustement parent' }); D.etoiles = x.etoiles; store.set('donnees', D); ecranEtoiles(); } catch (e) { toast(e.message, true); } } }))),
-      el('h3', { text: 'Remise à zéro' }),
-      boutonRemiseAZero(),
-      el('h3', { text: 'Historique' }), hist);
-    try { const h = await api('historiqueEtoiles'); hist.replaceChildren(...(h.length ? h.slice(0, 30).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16) }))) : [el('p', { class: 'vide', text: 'Rien pour l\'instant.' })])); }
-    catch (e) { hist.replaceChildren(el('p', { class: 'muted petit', text: 'Historique indisponible hors ligne.' })); }
+  /* ---------- Étoiles et récompenses (parents) ---------- */
+  const EMOJIS = ['🎁', '🎮', '📺', '🍦', '🍰', '🛝', '🚲', '⚽', '🎨', '📚', '🧸', '🎬', '🏊', '🌙'];
+  const emojiDe = nom => { const m = String(nom || '').match(/^(\p{Extended_Pictographic}️?)\s*/u); return m ? m[1] : '🎁'; };
+  const sansEmoji = nom => String(nom || '').replace(/^(\p{Extended_Pictographic}️?)\s*/u, '');
+  const dateCourte = h => { const j = String(h || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(j) ? nomJour(j) + ' ' + MOIS[dateJ(j).getMonth()] : j; };
+  function formRecompense(r, apres) {
+    let emoji = r ? emojiDe(r.nom) : '🎁';
+    const nom = el('input', { value: r ? sansEmoji(r.nom) : '', placeholder: 'Ex. : 15 minutes de jeu vidéo' });
+    const cout = el('input', { type: 'number', min: 1, inputmode: 'numeric', value: r ? r.cout : 10 });
+    const choixE = el('div', { class: 'emojis', role: 'radiogroup', 'aria-label': 'Image' }, EMOJIS.map(e => el('button', { type: 'button', 'aria-pressed': String(e === emoji), text: e, onclick: ev => { emoji = e; choixE.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.textContent === e))); } })));
+    return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+      el('h2', { text: r ? 'Modifier la récompense' : 'Nouvelle récompense' }), choixE,
+      el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Récompense', nom), el('label', { class: 'champ' }, 'Prix en étoiles', cout)),
+      el('p', { class: 'muted petit', text: 'Repère : une séance rapporte en général 5 à 12 étoiles. Une petite récompense vers 10, une grande vers 50.' }),
+      el('div', { class: 'rangee' }, el('button', { class: 'btn', type: 'button', text: 'Annuler', onclick: () => apres(false) }),
+        el('button', { class: 'btn plein', type: 'button', text: 'Enregistrer', onclick: async () => {
+          if (!nom.value.trim()) return nom.focus();
+          try { await api('enregistrerRecompense', { recompense: { id: r && r.id, nom: emoji + ' ' + nom.value.trim(), cout: Number(cout.value), actif: 1 } }); await charger(); toast('Enregistré.'); apres(true); } catch (e) { toast(e.message, true); } } })));
   }
+  async function ecranEtoiles() {
+    const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
+    pageP('Étoiles et récompenses', 'carnet', badgeEtoiles(), zone);
+    let st, toutes;
+    try { [st, toutes] = await Promise.all([api('resumeEtoiles'), api('toutesRecompenses'), charger()]); }
+    catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
+    D.etoiles = st.solde; D.attente = st.attente; store.set('donnees', D);
+    const formZone = el('div');
+    const donner = (libelle, args) => el('button', { class: 'btn plein', type: 'button', text: libelle, onclick: async ev => {
+      const b = ev.currentTarget; b.disabled = true;
+      try { await api('echangerRecompense', args); await charger(); toast('Récompense donnée !'); ecranEtoiles(); } catch (e) { toast(e.message, true); b.disabled = false; } } });
+    const choix = (st.echanges || []).filter(e => e.statut === 'demandée');
+    const obtenues = (st.echanges || []).filter(e => e.statut === 'donnée');
+    const actives = toutes.filter(r => String(r.actif) !== '0').sort((a, b) => a.cout - b.cout), archivees = toutes.filter(r => String(r.actif) === '0');
+    const max = Math.max(1, ...st.semaines.map(x => x.etoiles));
+    zone.replaceChildren(...[
+      /* Résumé */
+      el('section', { class: 'carte resume-etoiles' },
+        el('div', { class: 'gros-compteur' }, el('b', { text: '★ ' + st.solde }), el('span', { text: 'dans la tirelire' + (st.attente ? ' · +' + st.attente + ' à valider' : '') })),
+        el('div', { class: 'chiffres' }, [['Aujourd\'hui', st.aujourdhui], ['7 jours', st.semaine], ['30 jours', st.mois], ['Gagnées en tout', st.total], ['Dépensées', st.depense]].map(([l, v]) => el('div', {}, el('b', { text: String(v) }), el('small', { text: l })))),
+        el('div', { class: 'barres', 'aria-label': 'Étoiles gagnées par semaine' }, st.semaines.map((w, k) => el('div', { class: 'barre-sem', title: 'Semaine du ' + dateCourte(w.du) + ' : ' + w.etoiles + ' étoiles' },
+          el('span', { class: 'v', text: w.etoiles ? String(w.etoiles) : '' }), el('i', { style: 'height:' + Math.round(4 + 70 * w.etoiles / max) + 'px' }), el('small', { text: k === st.semaines.length - 1 ? 'cette sem.' : '' })))),
+        st.attente ? el('a', { class: 'btn ok', href: '#/p/valider', text: 'Valider les ' + st.attente + ' étoiles en attente' }) : null),
+      /* Choix de Faël */
+      choix.length ? el('section', { class: 'carte choix-fael' }, el('h2', { text: 'Faël a choisi' }),
+        ...choix.map(c => el('div', { class: 'tuile' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: emojiDe(c.nom) }),
+          el('span', {}, el('span', { class: 't', text: sansEmoji(c.nom) }), el('span', { class: 's', text: c.cout + ' ★ · le ' + dateCourte(c.horodatage) })),
+          el('span', { class: 'rangee', style: 'margin-left:auto' }, donner('Donner', { demande: c.id }),
+            el('button', { class: 'btn discret', type: 'button', text: 'Pas maintenant', onclick: async () => { try { await api('annulerChoix', { id: c.id }); await charger(); ecranEtoiles(); } catch (e) { toast(e.message, true); } } }))))) : null,
+      /* Récompenses */
+      el('h3', { text: 'Les récompenses' }),
+      ...actives.map(r => el('div', { class: 'tuile recompense' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: emojiDe(r.nom) }),
+        el('span', {}, el('span', { class: 't', text: sansEmoji(r.nom) }), el('span', { class: 's', text: r.cout + ' étoiles' + (st.solde >= r.cout ? ' · Faël peut l\'avoir' : ' · encore ' + (r.cout - st.solde)) })),
+        el('span', { class: 'rangee', style: 'margin-left:auto' },
+          st.solde >= Number(r.cout) ? donner('Donner', { id: r.id }) : null,
+          el('button', { class: 'rond', type: 'button', 'aria-label': 'Modifier ' + r.nom, text: '✎', onclick: () => formZone.replaceChildren(formRecompense(r, () => ecranEtoiles())) }),
+          el('button', { class: 'rond', type: 'button', 'aria-label': 'Retirer ' + r.nom, text: '🗑', onclick: async () => { try { await api('enregistrerRecompense', { recompense: { id: r.id, nom: r.nom, cout: r.cout, actif: 0 } }); await charger(); toast('Retirée (elle reste dans l\'historique).'); ecranEtoiles(); } catch (e) { toast(e.message, true); } } })))),
+      actives.length ? null : el('p', { class: 'vide', text: 'Aucune récompense : ajoutez-en une.' }),
+      el('button', { class: 'btn large', type: 'button', text: '➕ Ajouter une récompense', onclick: () => { formZone.replaceChildren(formRecompense(null, () => ecranEtoiles())); formZone.scrollIntoView({ behavior: 'smooth' }); } }),
+      formZone,
+      archivees.length ? el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: 'Récompenses retirées (' + archivees.length + ')' }),
+        ...archivees.map(r => el('div', { class: 'tuile' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: emojiDe(r.nom) }), el('span', {}, el('span', { class: 't', text: sansEmoji(r.nom) }), el('span', { class: 's', text: r.cout + ' étoiles' })),
+          el('button', { class: 'btn discret', style: 'margin-left:auto', type: 'button', text: 'Remettre', onclick: async () => { try { await api('enregistrerRecompense', { recompense: { id: r.id, nom: r.nom, cout: r.cout, actif: 1 } }); await charger(); ecranEtoiles(); } catch (e) { toast(e.message, true); } } })))) : null,
+      /* Déjà obtenues */
+      el('h3', { text: 'Récompenses déjà obtenues' }),
+      obtenues.length ? el('div', { class: 'liste' }, obtenues.map(e => el('div', { class: 'tuile' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: emojiDe(e.nom) }),
+        el('span', {}, el('span', { class: 't', text: sansEmoji(e.nom) }), el('span', { class: 's', text: '−' + e.cout + ' ★ · ' + dateCourte(e.modifie || e.horodatage) }))))) : el('p', { class: 'muted petit', text: 'Pas encore de récompense obtenue.' }),
+      /* Outils */
+      el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: 'Ajuster, remettre à zéro, historique détaillé' }),
+        el('div', { style: 'display:flex;flex-direction:column;gap:12px;margin-top:10px' },
+          el('p', { class: 'muted petit', text: 'Ajuster à la main' }),
+          el('div', { class: 'rangee' }, [-5, -1, 1, 5].map(n => el('button', { class: 'btn discret', type: 'button', text: (n > 0 ? '+' : '') + n, onclick: async () => { try { const x = await api('ajusterEtoiles', { delta: n, motif: 'ajustement parent' }); D.etoiles = x.etoiles; store.set('donnees', D); ecranEtoiles(); } catch (e) { toast(e.message, true); } } }))),
+          boutonRemiseAZero(),
+          el('div', { class: 'liste', id: 'histo-etoiles' }, el('button', { class: 'btn discret', type: 'button', text: 'Voir l\'historique des étoiles', onclick: async ev => {
+            const box = ev.currentTarget.parentNode;
+            try { const h = await api('historiqueEtoiles'); box.replaceChildren(...(h.length ? h.slice(0, 60).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16).replace('T', ' ') }))) : [el('p', { class: 'muted petit', text: 'Rien pour l\'instant.' })])); }
+            catch (e) { toast('Historique indisponible hors ligne.', true); } } }))))].filter(Boolean));
+  }
+
+  /* ---------- Ma tirelire (Faël) ---------- */
+  function carteTirelire() {
+    const n = D.etoiles || 0, rec = (D.recompenses || []).slice().sort((a, b) => a.cout - b.cout);
+    const prochaine = rec.find(r => Number(r.cout) > n) || null, possible = rec.filter(r => Number(r.cout) <= n).pop();
+    const choisie = (D.choix || [])[0];
+    const cible = prochaine || possible;
+    return el('a', { class: 'tirelire', href: '#/tirelire', 'aria-label': 'Ma tirelire : ' + n + ' étoiles' },
+      el('div', { class: 'tirelire-haut' }, el('span', { class: 'tirelire-n' }, el('b', { text: '★' }), ' ' + n), D.attente ? el('span', { class: 'tirelire-att', text: '+' + D.attente + ' à faire valider' }) : null, el('span', { class: 'fl', text: '›' })),
+      choisie ? el('span', { class: 'tirelire-txt', text: 'Tu as choisi : ' + sansEmoji(choisie.nom) + ' ' + emojiDe(choisie.nom) + '. Papa ou maman va te la donner !' })
+        : cible ? [el('span', { class: 'tirelire-txt' }, possible && !prochaine ? 'Tu peux avoir : ' : prochaine && possible ? 'Tu peux déjà avoir « ' + sansEmoji(possible.nom) + ' ». Prochaine : ' : 'Prochaine récompense : ', el('b', { text: sansEmoji(cible.nom) + ' ' + emojiDe(cible.nom) }), prochaine ? ' — encore ' + (prochaine.cout - n) + ' ★' : ''),
+          el('span', { class: 'jauge', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.min(100, Math.round(100 * n / Math.max(1, cible.cout))) + '%' }))]
+        : el('span', { class: 'tirelire-txt', text: 'Gagne des étoiles en faisant tes exercices !' }));
+  }
+  async function ecranTirelire() {
+    const n = D.etoiles || 0, rec = (D.recompenses || []).slice().sort((a, b) => a.cout - b.cout);
+    const choisies = (D.choix || []).map(c => String(c.recompense));
+    const gagnees = el('div', { class: 'liste' }), stats = el('p', { class: 'muted' });
+    page(tete('Ma tirelire', '#/', badgeEtoiles()),
+      el('section', { class: 'carte bilan' }, el('span', { class: 'gros', text: '★ ' + n }), el('p', { text: n ? 'Bravo, ce sont tes étoiles !' : 'Ta tirelire attend tes premières étoiles.' }),
+        D.attente ? el('p', { class: 'muted petit', text: '+' + D.attente + ' étoiles attendent que papa ou maman les valide (« J\'ai fini ! »).' }) : null, stats),
+      el('h3', { text: 'Les récompenses' }),
+      el('div', { class: 'liste' }, rec.length ? rec.map(r => {
+        const ok = n >= Number(r.cout), deja = choisies.includes(String(r.id));
+        return el('div', { class: 'tuile recompense' + (ok ? ' possible' : '') }, el('span', { class: 'ic grand-ic', 'aria-hidden': 'true', text: emojiDe(r.nom) }),
+          el('span', { style: 'flex:1 1 150px;min-width:0' }, el('span', { class: 't', text: sansEmoji(r.nom) }),
+            el('span', { class: 'jauge', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.min(100, Math.round(100 * n / Math.max(1, r.cout))) + '%' })),
+            el('span', { class: 's', text: deja ? 'Choisie ! Papa ou maman va te la donner.' : ok ? r.cout + ' ★ : tu peux l\'avoir !' : n + ' / ' + r.cout + ' ★ · encore ' + (r.cout - n) })),
+          ok && !deja ? el('button', { class: 'btn plein', type: 'button', text: 'Je la choisis !', onclick: async ev => {
+            const b = ev.currentTarget; b.disabled = true;
+            try { await api('choisirRecompense', { id: r.id }); await charger(); toast('Super choix ! Montre-le à papa ou maman.'); dire([{ texte: 'Super choix ! Papa ou maman va te donner ta récompense.' }]); ecranTirelire(); } catch (e) { toast(e.message, true); b.disabled = false; } } }) : null);
+      }) : el('p', { class: 'vide', text: 'Papa ou maman va bientôt ajouter des récompenses.' })),
+      el('h3', { text: 'Ce que j\'ai déjà gagné' }), gagnees);
+    try {
+      const st = await api('resumeEtoiles');
+      stats.textContent = 'Cette semaine, tu as gagné ' + st.semaine + ' étoile' + (st.semaine > 1 ? 's' : '') + '. Depuis le début : ' + st.total + ' !';
+      const ob = (st.echanges || []).filter(e => e.statut === 'donnée');
+      gagnees.replaceChildren(...(ob.length ? ob.map(e => el('div', { class: 'tuile' }, el('span', { class: 'ic grand-ic', 'aria-hidden': 'true', text: emojiDe(e.nom) }), el('span', {}, el('span', { class: 't', text: sansEmoji(e.nom) }), el('span', { class: 's', text: dateCourte(e.modifie || e.horodatage) })))) : [el('p', { class: 'muted petit', text: 'Pas encore : continue, tu y es presque !' })]));
+    } catch (e) { gagnees.replaceChildren(el('p', { class: 'muted petit', text: 'Indisponible hors ligne.' })); }
+  }
+
   /* Conseils : l'essentiel, l'approfondi, la mise en œuvre dans l'appli (avec contrôle), et une discussion avec l'IA */
   let ongletConseils = 'discuter', cacheConseils = null;
   async function ecranConseils(onglet) {
@@ -1187,6 +1310,7 @@
     if (a === 'seance') return ecranSeance(b, false);
     if (a === 'tache') return ecranTache(b);
     if (a === 'fini') return ecranFini();
+    if (a === 'tirelire') return ecranTirelire();
     if (a === 'parents') return porteParents(() => ecranSemaine());
     if (a === 'essai') return porteParents(() => ecranSeance(b, true));
     if (a === 'p') return porteParents(() => {

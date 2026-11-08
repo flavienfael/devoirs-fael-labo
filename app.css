@@ -209,3 +209,31 @@ label.case input{width:26px; height:26px; flex:none}
 .aides{display:flex; flex-direction:column; gap:10px}
 .aides:empty, .aides > div:empty{display:none}
 .btn.danger{background:var(--bad-soft); border-color:var(--bad); color:var(--bad)}
+/* ---------- Tirelire et récompenses ---------- */
+.tirelire{display:flex; flex-direction:column; gap:8px; padding:14px 16px; border-radius:16px; text-decoration:none; color:var(--ink);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--star) 22%, var(--paper)), var(--paper)); border:2px solid var(--star); box-shadow:0 2px 6px var(--shadow)}
+.tirelire-haut{display:flex; align-items:center; gap:10px}
+.tirelire-n{font-size:2rem; font-weight:800; line-height:1} .tirelire-n b{color:var(--star)}
+.tirelire-att{font-size:.85rem; font-weight:700; padding:2px 10px; border-radius:999px; background:var(--warn-soft); color:var(--warn)}
+.tirelire .fl{margin-left:auto; font-size:1.4rem; color:var(--muted)}
+.tirelire-txt{font-size:1rem}
+.jauge{display:block; height:12px; border-radius:999px; background:var(--seyes); overflow:hidden; margin:4px 0}
+.jauge i{display:block; height:100%; border-radius:999px; background:var(--star); transition:width .4s}
+.tuile.recompense.possible{border:2px solid var(--star)}
+.grand-ic{font-size:1.8rem}
+.emojis{display:flex; flex-wrap:wrap; gap:6px}
+.emojis button{width:44px; height:44px; font-size:1.4rem; border-radius:10px; border:2px solid var(--seyes-bold); background:var(--paper)}
+.emojis button[aria-pressed="true"]{border-color:var(--accent); background:var(--accent-soft)}
+.resume-etoiles{display:flex; flex-direction:column; gap:12px}
+.gros-compteur{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap} .gros-compteur b{font-size:2.2rem; color:var(--star)}
+.chiffres{display:grid; grid-template-columns:repeat(auto-fit, minmax(84px, 1fr)); gap:8px; text-align:center}
+.chiffres b{display:block; font-size:1.3rem} .chiffres small{color:var(--muted); font-size:.75rem}
+.barres{display:flex; align-items:flex-end; gap:6px; height:110px; padding-top:6px}
+.barre-sem{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; min-width:0}
+.barre-sem i{display:block; width:100%; max-width:34px; border-radius:6px 6px 0 0; background:var(--star)}
+.barre-sem .v{font-size:.7rem; color:var(--muted)} .barre-sem small{font-size:.65rem; color:var(--muted); white-space:nowrap}
+.choix-fael{display:flex; flex-direction:column; gap:8px; border:2px solid var(--star)}
+.tuile .rangee{flex-wrap:wrap; justify-content:flex-end}
+.tuile.recompense, .choix-fael .tuile{flex-wrap:wrap; row-gap:10px}
+.tuile.recompense > span:nth-child(2), .choix-fael .tuile > span:nth-child(2){flex:1 1 150px; min-width:0}
+.tuile.recompense > .btn, .tuile.recompense > .rangee, .choix-fael .tuile > .rangee{margin-left:auto}
