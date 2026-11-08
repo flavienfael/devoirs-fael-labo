@@ -100,20 +100,26 @@
   function questions(c) {
     const d = c.donnees || {}, out = [];
     if (c.type === 'mots') {
-      (d.mots || []).forEach(m => {
-        const mot = String(m.mot || '').trim(); if (!mot) return;
-        const nom = mot.replace(/^(un|une|des|le|la|les)\s+|^l'/i, ''), n = nom.length;
-        const trou = m.phrase && norm(m.phrase).includes(norm(nom)) ? m.phrase.replace(new RegExp(nom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '____') : '____';
-        out.push({ cle: 'e:' + mot, mode: 'saisie', diff: n, accepte: [mot],
-          consigne: '**Écoute** et **écris** le mot qui manque.', enonce: trou,
-          dire: [{ texte: mot }, m.phrase ? { texte: m.phrase } : null, { texte: nom }], bonne: nom,
-          aide: 'Le mot commence par « ' + nom.slice(0, 2) + ' » et a ' + n + ' lettres.',
-          explication: 'On écrit : ' + mot + '.' });
+      /* Aucune écriture au clavier : seulement des choix (l'écriture se fait sur papier) */
+      const liste = (d.mots || []).map(m => ({ mot: String(m.mot || '').trim(), phrase: m.phrase })).filter(m => m.mot)
+        .map(m => Object.assign(m, { nom: m.mot.replace(/^(un|une|des|le|la|les)\s+|^l'/i, '') }));
+      liste.forEach(m => {
+        const { mot, nom } = m, n = nom.length, autres = melange(liste.filter(x => x !== m)).slice(0, 2).map(x => x.nom);
         const fautes = variantes(mot);
         if (fautes.length) out.push({ cle: 'c:' + mot, mode: 'choix', diff: n - 3,
           consigne: 'Choisis le mot **bien écrit**.', enonce: 'Quel mot est bien écrit ?', dire: [{ texte: mot }],
           choix: melange([mot, ...fautes]), bonne: mot,
           aide: 'Écoute le mot, puis regarde chaque lettre, surtout la fin.', explication: 'On écrit : ' + mot + '.' });
+        const dansPhrase = m.phrase && norm(m.phrase).includes(norm(nom));
+        if (autres.length === 2 && (dansPhrase || !fautes.length)) out.push(dansPhrase
+          ? { cle: 'p:' + mot, mode: 'choix', diff: n,
+            consigne: 'Choisis le mot **qui manque**.', enonce: m.phrase.replace(new RegExp(nom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '____'),
+            dire: [{ texte: m.phrase }], choix: melange([nom, ...autres]), bonne: nom,
+            aide: 'Relis la phrase en entier : quel mot a du sens ?', explication: m.phrase }
+          : { cle: 'o:' + mot, mode: 'choix', diff: n,
+            consigne: '**Écoute** et choisis le mot que tu entends.', enonce: 'Quel mot entends-tu ?', dire: [{ texte: mot }],
+            choix: melange([nom, ...autres]), bonne: nom,
+            aide: 'Réécoute le mot et regarde la première lettre.', explication: 'C\'était : ' + mot + '.' });
       });
     } else if (c.type === 'conjugaison') {
       const f = d.formes || {}, verbe = d.verbe || 'le verbe', temps = d.temps || 'présent';
@@ -126,9 +132,11 @@
           consigne: 'Choisis la bonne forme du verbe **' + verbe + '** au ' + temps + '.', enonce: pron(p, forme) + '____', dire: [{ texte: p }],
           choix: melange([forme, ...autres]), bonne: forme,
           aide: 'Avec « ' + p + ' », la fin du verbe s\'écrit « …' + fin + ' ».', explication: pron(p, forme) + forme + '.' });
-        out.push({ cle: 'e:' + p, mode: 'saisie', diff: diff + 1,
-          consigne: '**Écris** le verbe **' + verbe + '** au ' + temps + '.', enonce: pron(p, forme) + '____', dire: [{ texte: p }],
-          bonne: forme, aide: 'Avec « ' + p + ' », la fin du verbe s\'écrit « …' + fin + ' ».', explication: pron(p, forme) + forme + '.' });
+        const lib = x => pron(x, forme).trim(), faux = melange(PRONOMS.filter(x => f[x] && f[x] !== forme)).slice(0, 2);
+        if (faux.length === 2) out.push({ cle: 'p:' + p, mode: 'choix', diff: diff + 1,
+          consigne: 'Choisis **qui** fait l\'action.', enonce: '____ ' + forme, dire: [{ texte: forme }],
+          choix: melange([lib(p), ...faux.map(lib)]), bonne: lib(p),
+          aide: 'Regarde la fin du verbe : « …' + fin + ' ».', explication: pron(p, forme) + forme + '.' });
       });
     } else if (c.type === 'vocabulaire') {
       const paires = (d.paires || []).filter(p => p.fr && p.en), lang = /anglais/i.test(d.langue || 'anglais') ? 'en-GB' : 'fr-FR';
@@ -153,7 +161,7 @@
     }
     return out;
   }
-  const estJuste = (q, rep) => q.mode === 'saisie' ? [q.bonne, ...(q.accepte || [])].some(b => propre(rep) === propre(b)) : rep === q.bonne;
+  const estJuste = (q, rep) => rep === q.bonne;
 
   /* Erreurs à revoir (répétition espacée : J+1, J+3, J+7) */
   const ECARTS = [1, 3, 7];
@@ -173,7 +181,7 @@
   }
   const badgeEtoiles = () => el('span', { class: 'etoiles', 'aria-label': (D ? D.etoiles || 0 : 0) + ' étoiles' + (D && D.attente ? ', ' + D.attente + ' à valider' : '') }, el('b', { text: '★' }), String(D ? D.etoiles || 0 : 0), D && D.attente ? el('small', { class: 'attente', text: '+' + D.attente }) : null);
   const ICONES = { mots: '✏️', conjugaison: '🔤', vocabulaire: '🇬🇧', qcm: '✅' };
-  const TYPES = { mots: 'Mots à écrire', conjugaison: 'Conjugaison', vocabulaire: 'Vocabulaire', qcm: 'Questions' };
+  const TYPES = { mots: 'Mots de dictée', conjugaison: 'Conjugaison', vocabulaire: 'Vocabulaire', qcm: 'Questions' };
   const MATIERES = ['Français', 'Mathématiques', 'Anglais', 'Questionner le monde'];
   const contenus = statut => (D ? D.contenus : []).filter(c => !statut || c.statut === statut);
   const contenu = id => (D ? D.contenus : []).find(c => String(c.id) === String(id));
@@ -401,12 +409,7 @@
       const ecouter = () => dire([{ texte: q.consigne }, ...(q.dire || [])]);
       const outils = el('div', { class: 'outils' },
         el('button', { class: 'btn discret', type: 'button', text: '🔊 Écouter', onclick: ecouter }),
-        el('button', { class: 'btn discret', type: 'button', text: '💡 Coup de pouce', onclick: () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide)) }),
-        D.mistral ? el('button', { class: 'btn discret', type: 'button', text: 'Explique-moi autrement', onclick: async (ev) => {
-          const b = ev.currentTarget; b.disabled = true; zoneAide.replaceChildren(el('div', { class: 'aide', text: 'Je cherche une autre façon d\'expliquer…' }));
-          try { const r2 = await api('expliquerAutrement', { consigne: q.consigne.replace(/\*\*/g, ''), question: q.enonce, explication: q.aide }); zoneAide.replaceChildren(el('div', { class: 'aide' }, r2.texte)); }
-          catch (e) { zoneAide.replaceChildren(el('div', { class: 'aide', text: 'Pas d\'explication pour l\'instant : utilise le coup de pouce.' })); }
-          b.disabled = false; } }) : null);
+        el('button', { class: 'btn discret', type: 'button', text: '💡 Coup de pouce', onclick: () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide)) }));
       function repondre(rep, bouton) {
         const juste = estJuste(q, rep);
         etat.journal.push({ contenu: c.id, question: q.cle, reponse: rep, juste, essai: etat.essai, duree_s: Math.round((Date.now() - etat.tq) / 1000) });
@@ -415,23 +418,20 @@
           if (bouton) bouton.classList.add('juste');
           verrouiller();
           zoneRetour.replaceChildren(el('div', { class: 'retour ok', role: 'status' },
-            el('b', { class: 'titre', text: etat.essai === 1 ? 'Bravo !' : 'Bien rattrapé !' }), el('span', { class: 'plus1', text: '+1 étoile ★' }), el('span', { text: q.explication }),
-            el('button', { class: 'btn plein', type: 'button', text: 'Continuer', onclick: suivant })));
+            el('b', { class: 'titre', text: 'Bravo !' }), el('span', { class: 'plus1', text: '+1 étoile ★' }), el('span', { text: q.explication }),
+            el('button', { class: 'btn plein large', type: 'button', text: 'Continuer', onclick: suivant })));
           zoneRetour.querySelector('button').focus();
-        } else if (etat.essai === 1) {
-          etat.essai = 2;
-          if (bouton) { bouton.classList.add('faux'); bouton.disabled = true; }
-          zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide));
-          zoneRetour.replaceChildren(el('div', { class: 'retour info', role: 'status' }, el('b', { class: 'titre', text: 'Presque !' }), el('span', { text: 'Lis le coup de pouce et essaie encore une fois.' })));
-          const inp = zoneRep.querySelector('input'); if (inp) { inp.select(); inp.focus(); }
         } else {
+          /* Erreur : la case choisie devient orangée, la bonne réponse s'affiche en vert, et on continue */
           if (!test) noterErreur(c.id, q.cle);
           if (bouton) bouton.classList.add('faux');
           verrouiller(true);
+          zoneAide.replaceChildren();
           zoneRetour.replaceChildren(el('div', { class: 'retour ko', role: 'status' },
             el('b', { class: 'titre', text: 'On regarde ensemble' }), el('span', {}, 'La bonne réponse : ', el('b', { text: q.bonne })), el('span', { text: q.explication }),
-            el('span', { class: 'muted petit', text: 'Cette question reviendra demain pour t\'entraîner.' }),
-            el('button', { class: 'btn plein', type: 'button', text: 'Continuer', onclick: suivant })));
+            el('span', { class: 'muted petit', text: 'Cette question reviendra pour t\'entraîner.' }),
+            el('button', { class: 'btn plein large', type: 'button', text: 'Continuer', onclick: suivant })));
+          zoneRetour.querySelector('button').focus();
         }
       }
       function verrouiller(montrer) {
@@ -440,12 +440,6 @@
       if (q.mode === 'choix') {
         zoneRep.replaceChildren(el('div', { class: 'choix' + (q.choix.some(x => x.length > 22) ? ' un' : '') },
           q.choix.map(ch => el('button', { class: 'btn', type: 'button', 'data-v': ch, text: ch, onclick: e => { if (q.direChoix) dire([{ texte: ch, lang: q.direChoix }]); repondre(ch, e.currentTarget); } }))));
-      } else {
-        const inp = el('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': 'Ta réponse' });
-        const val = el('button', { class: 'btn plein', type: 'button', text: 'Valider', onclick: () => { if (inp.value.trim()) repondre(inp.value.trim(), null); else inp.focus(); } });
-        inp.addEventListener('keydown', e => { if (e.key === 'Enter') val.click(); });
-        zoneRep.replaceChildren(el('div', { class: 'saisie' }, inp, el('p', { class: 'muted petit', text: 'Avant de valider, je relis mon mot lettre par lettre.' }), val));
-        setTimeout(() => inp.focus(), 60);
       }
       page(tete(c.titre, retour, droiteSeance()),
         el('div', { class: 'progression' }, el('span', { text: libSerie }), points),
@@ -478,11 +472,10 @@
     }
 
     function bilan() {
-      const j = etat.journal, premiers = j.filter(x => x.essai === 1 && x.juste).length, seconds = j.filter(x => x.essai === 2 && x.juste).length;
+      const j = etat.journal, premiers = j.filter(x => x.juste).length;
       const total = series.reduce((s, l) => s + l.length, 0);
       const bonus = test ? 0 : 2; const gagne = etat.etoiles + bonus;
-      const phrase = premiers + seconds === total ? 'Tout juste ! Tu as été très concentré.' :
-        seconds ? 'Tu as trouvé ' + (premiers + seconds) + ' réponses sur ' + total + ', dont ' + seconds + ' grâce au coup de pouce : bien joué d\'avoir réessayé.' :
+      const phrase = premiers === total ? 'Tout juste ! Tu as été très concentré.' :
         'Tu as trouvé ' + premiers + ' réponses sur ' + total + '. Les autres reviendront pour t\'entraîner.';
       if (!test) envoyer({ resultats: j.map(x => Object.assign({ horodatage: new Date().toISOString().slice(0, 19).replace('T', ' ') }, x)), etoiles: gagne, motif: 'Séance : ' + c.titre })
         .then(() => { const b = $('.etoiles'); if (b && D) b.replaceWith(badgeEtoiles()); });
