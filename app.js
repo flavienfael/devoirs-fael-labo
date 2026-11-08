@@ -1,4 +1,4 @@
-/* Cahiers de Faël — appli unique (LABO, version 1, 08/11/2026).
+/* Cahiers de Faël — appli unique (LABO, version 2, 08/11/2026 : IA via Mammouth ou Mistral, lecture de photo sur le téléphone).
    Une seule appli : l'espace de Faël (séances, devoirs du jour, étoiles) et l'espace parents
    (contenus saisis directement ou préparés par Mistral, devoirs, étoiles, journal, réglages, conseils).
    Les données vivent dans le « Moteur LABO » (Apps Script + tableur privé) ; rien de personnel n'est écrit dans ce fichier public. */
@@ -445,7 +445,7 @@
         t('#/p/conseils', '💬', 'Conseils', 'Pour accompagner Faël'),
         t('#/p/reglages', '⚙️', 'Réglages', 'Séries, pauses, voix, code parents'),
         t('anciennes-applis.html', '🗂️', 'Anciennes applis', 'Pour comparer'),
-        t('#/relier', '🔗', 'Relier l\'appli au moteur', D.mistral ? 'Mistral activé' : 'Mistral pas encore activé')));
+        t('#/relier', '🔗', 'Relier l\'appli au moteur', D.mistral ? 'IA activée (' + D.ia + ')' : 'IA pas encore activée')));
   }
 
   function ecranContenus() {
@@ -464,9 +464,9 @@
       el('h3', { text: 'Saisie directe' }),
       el('div', { class: 'liste' }, Object.keys(TYPES).map(ty => el('a', { class: 'tuile', href: '#/p/nouveau/' + ty },
         el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[ty] }), el('span', {}, el('span', { class: 't', text: TYPES[ty] }), el('span', { class: 's', text: AIDES_TYPES[ty] })), el('span', { class: 'fl', text: '›' })))),
-      el('h3', { text: 'Préparé par Mistral' }),
+      el('h3', { text: 'Préparé avec l\'IA' }),
       el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
-        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'Mistral lit la leçon et prépare un brouillon que vous validez' : 'Disponible quand la clé Mistral sera ajoutée' })), el('span', { class: 'fl', text: '›' })));
+        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare un brouillon que vous validez' : 'Lecture de photo sur le téléphone ; l\'IA quand la clé sera ajoutée' })), el('span', { class: 'fl', text: '›' })));
   }
   const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
 
@@ -540,7 +540,7 @@
         el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Matière', matiere), el('label', { class: 'champ' }, 'Thème', theme, dl)),
         corps,
         el('label', { class: 'champ' }, 'Je retiens (facultatif)', el('span', { class: 'aide-champ', text: 'Une carte par bloc : 1re ligne = titre, puis le texte, et « Ex : » pour un exemple.' }), retiens),
-        c.texteLu ? el('details', { class: 'lu' }, el('summary', { text: 'Ce que Mistral a lu' }), el('pre', { text: c.texteLu })) : null),
+        c.texteLu ? el('details', { class: 'lu' }, el('summary', { text: 'Le texte de départ' }), el('pre', { text: c.texteLu })) : null),
       el('div', { class: 'rangee' },
         el('button', { class: 'btn', type: 'button', text: 'Essayer', onclick: () => sauver(c.statut === 'validé' ? 'validé' : 'à valider', r => { location.hash = '#/essai/' + r.id; }) }),
         el('button', { class: 'btn', type: 'button', text: 'Enregistrer', onclick: () => sauver(c.statut === 'validé' ? 'validé' : 'à valider') }),
@@ -550,32 +550,60 @@
         try { await api('statutContenu', { id: c.id, statut: 'archivé' }); await charger(); location.hash = '#/p/contenus'; } catch (e) { toast(e.message, true); } } }) : null);
   }
 
+  /* OCR sur le téléphone (Tesseract, libre) : la photo ne quitte pas l'appareil */
+  let tesseract = null;
+  function chargerTesseract() {
+    if (tesseract) return tesseract;
+    tesseract = new Promise((ok, ko) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+      sc.onload = () => ok(window.Tesseract); sc.onerror = () => { tesseract = null; ko(new Error('Lecture sur le téléphone indisponible (réseau ?).')); }; document.head.append(sc); });
+    return tesseract;
+  }
+  async function lireSurTelephone(dataUrl, etat) {
+    const T = await chargerTesseract();
+    const w = await T.createWorker('fra', 1, { logger: m => { if (m.status === 'recognizing text') etat('Lecture… ' + Math.round(m.progress * 100) + ' %'); else etat('Préparation de la lecture…'); } });
+    try { const r = await w.recognize(dataUrl); return r.data.text || ''; } finally { w.terminate(); }
+  }
+
   function ecranGenerer() {
+    const ia = D.mistral, nomIA = D.ia ? 'l\'IA (Mistral via ' + D.ia + ')' : 'l\'IA';
     const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })));
-    const texte = el('textarea', { placeholder: 'Colle ou tape ici la leçon, la liste de mots, l\'exercice…' });
+    const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou lis une photo avec les boutons ci-dessus.' });
     const precision = el('input', { placeholder: 'Ex. : seulement les mots en bleu ; 10 questions faciles' });
-    const photo = el('input', { type: 'file', accept: 'image/*', capture: 'environment' });
-    const apercu = el('div', { class: 'vignettes' });
+    const photo = el('input', { type: 'file', accept: 'image/*' });
+    const apercu = el('div'), etat = el('p', { class: 'muted petit' });
     let image = null;
-    photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f); apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:160px;border-radius:8px' })); });
-    const go = el('button', { class: 'btn plein large', type: 'button', text: 'Préparer avec Mistral', disabled: !D.mistral, onclick: async () => {
-      if (!texte.value.trim() && !image) return toast('Ajoute une photo ou un texte.', true);
-      go.disabled = true; go.textContent = 'Mistral prépare le brouillon…';
+    const bLocal = el('button', { class: 'btn discret', type: 'button', text: 'Lire sur le téléphone', disabled: true, onclick: async () => {
+      bLocal.disabled = bIA.disabled = true;
+      try { const t = await lireSurTelephone('data:image/jpeg;base64,' + image.b64, m => { etat.textContent = m; }); texte.value = (t.trim() + '\n\n' + texte.value).trim(); etat.textContent = 'Texte lu : relis et corrige-le si besoin avant de continuer.'; }
+      catch (e) { etat.textContent = e.message; }
+      bLocal.disabled = false; bIA.disabled = !ia; } });
+    const bIA = el('button', { class: 'btn discret', type: 'button', text: 'Lire avec l\'IA', disabled: true, onclick: async () => {
+      bLocal.disabled = bIA.disabled = true; etat.textContent = 'L\'IA lit la photo…';
+      try { const r = await api('lirePhoto', { photoBase64: image.b64 }); texte.value = (r.texte.trim() + '\n\n' + texte.value).trim(); etat.textContent = 'Texte lu : relis et corrige-le si besoin avant de continuer.'; }
+      catch (e) { etat.textContent = e.message; }
+      bLocal.disabled = false; bIA.disabled = !ia; } });
+    photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f);
+      apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:160px;border-radius:8px' })); bLocal.disabled = false; bIA.disabled = !ia;
+      etat.textContent = 'Choisis comment lire la photo : sur le téléphone (gratuit, rien n\'est envoyé, idéal pour un texte imprimé) ou avec l\'IA (meilleur sur l\'écriture à la main).';
+      api('deposerPhoto', { base64: image.b64, commentaire: precision.value.trim() }).catch(() => {}); });
+    const go = el('button', { class: 'btn plein large', type: 'button', text: 'Préparer l\'exercice avec l\'IA', disabled: !ia, onclick: async () => {
+      if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou lis une photo.', true);
+      go.disabled = true; go.textContent = 'L\'IA prépare le brouillon…';
       try {
-        if (image) api('deposerPhoto', { base64: image.b64, commentaire: precision.value.trim() }).catch(() => {});
-        const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim(), photoBase64: image ? image.b64 : null });
-        brouillon = { type: r.type, titre: r.titre, matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme, donnees: r.donnees, statut: 'à valider', source: 'Mistral (' + (image ? 'photo' : 'texte') + ')', texteLu: r.texteLu };
+        const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
+        brouillon = { type: r.type, titre: r.titre, matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme, donnees: r.donnees, statut: 'à valider', source: 'IA (' + (r.modele || 'Mistral') + ')', texteLu: r.texteLu };
         location.hash = '#/p/nouveau/' + r.type;
-      } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer avec Mistral'; }
+      } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer l\'exercice avec l\'IA'; }
     } });
     page(tete('Photo ou texte', '#/p/ajouter'),
-      D.mistral ? null : el('p', { class: 'aide', text: 'Mistral n\'est pas encore activé : ajoute la clé dans le moteur (voir la notice). En attendant, utilise la saisie directe.' }),
+      ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La lecture sur le téléphone marche déjà.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('label', { class: 'champ' }, 'Type d\'exercice voulu', ty),
-        el('label', { class: 'champ' }, 'Photo de la leçon (facultatif)', photo), apercu,
-        el('label', { class: 'champ' }, 'Ou le texte (facultatif)', texte),
-        el('label', { class: 'champ' }, 'Précision pour Mistral (facultatif)', precision),
-        el('p', { class: 'muted petit', text: 'Mistral reçoit seulement la leçon : jamais le prénom de Faël ni le journal. Le résultat arrive en brouillon, à relire et valider.' })),
+        el('label', { class: 'champ' }, '1. Photo de la leçon (facultatif)', photo), apercu,
+        el('div', { class: 'rangee' }, bLocal, bIA), etat,
+        el('label', { class: 'champ' }, '2. Le texte de la leçon', texte),
+        el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
+        el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
+        el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. Le résultat arrive en brouillon, à relire et valider.' })),
       go);
   }
   function reduire(fichier) {
@@ -662,10 +690,18 @@
     const [lP, sP] = sel('Pause qui bouge entre les séries', ['oui', 'non'], r.pauses ? 'oui' : 'non'), [lD, sD] = sel('Durée de la pause', [30, 45, 60], r.dureePause, x => x + ' secondes');
     const [lV, sV] = sel('Lecture à voix haute', ['oui', 'non'], r.voix ? 'oui' : 'non'), [lC, sC] = sel('Mode calme (moins de décor)', ['oui', 'non'], r.calme ? 'oui' : 'non');
     const code = el('input', { type: 'password', inputmode: 'numeric', value: r.codeParents || '', placeholder: 'Aucun', autocomplete: 'off' });
+    const resultatTest = el('div', { class: 'petit' });
     page(tete('Réglages', '#/parents'),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('h2', { text: 'Mode concentration' }), el('div', { class: 'grille2' }, lT, lS), el('div', { class: 'grille2' }, lP, lD), el('div', { class: 'grille2' }, lV, lC),
         el('label', { class: 'champ' }, 'Code parents', el('span', { class: 'aide-champ', text: 'Pour que Faël n\'entre pas dans l\'espace parents. Vide = pas de code.' }), code)),
+      el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+        el('h2', { text: 'Intelligence artificielle' }),
+        el('p', { text: D.mistral ? 'Fournisseur : ' + D.ia + '. Modèles autorisés : Mistral Small, puis Mistral Medium en secours, automatiquement.' : 'Pas encore de clé dans le moteur.' }),
+        resultatTest,
+        el('button', { class: 'btn', type: 'button', text: 'Tester les capacités', onclick: async ev => { const bt = ev.currentTarget; bt.disabled = true; resultatTest.textContent = 'Test en cours (10 à 20 secondes)…';
+          try { const r = await api('testerCapacites'); resultatTest.replaceChildren(el('p', {}, el('b', { text: 'Texte : ' }), r.texte || '—'), el('p', {}, el('b', { text: 'Lecture de photo : ' }), r.vision || '—'), el('p', {}, el('b', { text: 'OCR Mistral direct : ' }), r.ocrMistral ? 'oui' : 'non (facultatif)'), r.credits ? el('p', { class: 'muted petit', text: 'Compte : ' + r.credits }) : null); }
+          catch (e) { resultatTest.textContent = e.message; } bt.disabled = false; } })),
       el('button', { class: 'btn plein large', type: 'button', text: 'Enregistrer', onclick: async () => {
         try { D.reglages = await api('enregistrerReglages', { reglages: { taille: Number(sT.value), series: Number(sS.value), pauses: sP.value === 'oui', dureePause: Number(sD.value), voix: sV.value === 'oui', calme: sC.value === 'oui', codeParents: code.value.trim() } }); store.set('donnees', D); toast('Enregistré.'); location.hash = '#/parents'; }
         catch (e) { toast(e.message, true); } } }));
