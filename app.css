@@ -237,3 +237,4 @@ label.case input{width:26px; height:26px; flex:none}
 .tuile.recompense, .choix-fael .tuile{flex-wrap:wrap; row-gap:10px}
 .tuile.recompense > span:nth-child(2), .choix-fael .tuile > span:nth-child(2){flex:1 1 150px; min-width:0}
 .tuile.recompense > .btn, .tuile.recompense > .rangee, .choix-fael .tuile > .rangee{margin-left:auto}
+.onglets a{max-width:96px; padding:0 2px} .onglets a small{font-size:.68rem; white-space:nowrap}

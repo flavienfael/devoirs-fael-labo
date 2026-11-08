@@ -405,10 +405,10 @@
     setTimeout(() => inp.focus(), 60);
   }
 
-  const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
+  const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['etoiles', '⭐', 'Étoiles'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
   function navParents(actif) {
     return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
-      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'carnet' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
+      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
   }
   const moteurAJour = () => !!(D && Array.isArray(D.taches));
   function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), moteurAJour() ? null : el('p', { class: 'alerte', text: '⚠️ Le moteur n\'est pas à jour : redéploie le code v5.2 dans Apps Script (Gérer les déploiements → Nouvelle version). Sans lui, la semaine, le carnet et la validation des étoiles ne marchent pas.' }), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
@@ -808,11 +808,9 @@
       b.disabled = false; } });
     pageP('Carnet de bord', 'carnet', null,
       alertes,
-      D.attente ? el('a', { class: 'btn ok large', href: '#/p/valider', text: '★ Valider les étoiles de Faël (' + D.attente + ')' }) : null,
       formCarnet(() => ecranCarnet()),
       el('div', { class: 'rangee' }, bilanBtn('semaine'), bilanBtn('mois')), bilanZone, hebdo,
       el('a', { class: 'tuile', href: '#/p/carnet/discuter' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🗨️' }), el('span', {}, el('span', { class: 't', text: 'Discuter du carnet avec l\'IA' }), el('span', { class: 's', text: 'Un fil à part, qui connaît les notes récentes' })), el('span', { class: 'fl', text: '›' })),
-      el('a', { class: 'tuile', href: '#/p/etoiles' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🎁' }), el('span', {}, el('span', { class: 't', text: 'Étoiles et récompenses' }), el('span', { class: 's', text: (D.etoiles || 0) + ' étoiles dans la tirelire' })), el('span', { class: 'fl', text: '›' })),
       el('h3', { text: 'Dernières notes' }), entrees);
     api('bilan', { periode: 'semaine', sansIA: true }).then(b => { if (b.alertes && b.alertes.length) alertes.replaceChildren(el('div', { class: 'retour info' }, el('b', { text: 'À surveiller cette semaine' }), b.alertes.map(a => el('span', { text: '🟠 ' + a })), el('a', { href: '#/p/carnet/discuter', class: 'petit', text: 'En parler avec l\'IA' }))); }).catch(() => {});
     try {
@@ -827,7 +825,7 @@
   /* Validation des étoiles gagnées, puis note facultative dans le carnet */
   async function ecranValider() {
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    pageP('Valider les étoiles', 'carnet', badgeEtoiles(), zone);
+    pageP('Valider les étoiles', 'etoiles', badgeEtoiles(), zone);
     let l;
     try { l = await api('etoilesEnAttente'); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
     if (!l.length) { D.attente = 0; store.set('donnees', D); zone.replaceChildren(el('p', { class: 'vide', text: 'Rien à valider.' }), el('a', { class: 'btn plein large', href: '#/', text: 'Revenir à l\'accueil' })); return; }
@@ -1100,7 +1098,7 @@
   }
   async function ecranEtoiles() {
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    pageP('Étoiles et récompenses', 'carnet', badgeEtoiles(), zone);
+    pageP('Étoiles et récompenses', 'etoiles', badgeEtoiles(), zone);
     let st, toutes;
     try { [st, toutes] = await Promise.all([api('resumeEtoiles'), api('toutesRecompenses'), charger()]); }
     catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
