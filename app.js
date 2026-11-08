@@ -578,8 +578,9 @@
         el('h2', { text: 'Séance terminée' }), el('span', { class: 'gros', text: '+' + gagne + ' ★' }),
         el('p', { text: phrase }),
         jd.length ? el('p', { class: 'defi-bilan', text: '🏆 Défi : ' + jd.filter(x => x.juste).length + ' sur ' + jd.length + (etat.etoilesDefi ? ' · +' + etat.etoilesDefi + ' étoiles' : ' · bravo d\'avoir essayé') }) : null,
-        bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance. Quand tu as tout fini, touche « J\'ai fini ! » pour les faire valider.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
-        el('a', { class: 'btn plein large', href: retour, text: test ? 'Retour au contenu' : 'Retour à mes cahiers' })));
+        bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
+        test ? el('a', { class: 'btn plein large', href: retour, text: 'Retour au contenu' }) : el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }),
+        test ? null : el('a', { class: 'btn large', href: '#/', text: 'J\'ai encore des devoirs à faire ici' })));
       dire([{ texte: 'Séance terminée. ' + phrase }]);
     }
 
@@ -736,7 +737,7 @@
   /* ---------- Carnet de bord des parents ---------- */
   const CRITERES = [['concentration', 'Concentration'], ['humeur', 'Humeur'], ['autonomie', 'Autonomie'], ['sommeil', 'Sommeil']];
   const AUTEURS = ['Flavien', 'Manue'];
-  function formCarnet(apres, titre) {
+  function formCarnet(apres, titre, sansBouton) {
     const auteur = el('select', { 'aria-label': 'Qui écrit' }, AUTEURS.map(a => el('option', { value: a, text: a, selected: a === store.get('auteur', 'Flavien') })));
     const notes = {};
     const rangees = CRITERES.map(([k, lib]) => el('div', { class: 'note-ligne' }, el('span', { text: lib }),
@@ -749,10 +750,13 @@
       try { await api('ajouterCarnet', { entree: Object.assign({ auteur: auteur.value, remarque: rem.value.trim() }, notes) }); toast('Noté.'); apres && apres(); }
       catch (e) { toast(e.message, true); go.disabled = false; }
     } });
-    return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+    const sec = el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
       el('h2', { text: titre || 'Nouvelle note' }), el('label', { class: 'champ' }, 'Qui écrit', auteur),
       el('p', { class: 'muted petit', text: 'De 1 (difficile) à 5 (très bien). Tout est facultatif. Plusieurs notes par jour possibles.' }),
-      rangees, el('label', { class: 'champ' }, 'Remarque', rem), go);
+      rangees, el('label', { class: 'champ' }, 'Remarque', rem), sansBouton ? null : go);
+    /* Utilisé par la validation des étoiles : l'entrée est enregistrée avec le même bouton */
+    sec.entree = () => (!rem.value.trim() && !Object.values(notes).some(Boolean)) ? null : (store.set('auteur', auteur.value), Object.assign({ auteur: auteur.value, remarque: rem.value.trim() }, notes));
+    return sec;
   }
   function blocBilan(b) {
     const m = b.moyennes || {}, s = b.stats || {};
@@ -799,20 +803,22 @@
     pageP('Valider les étoiles', 'carnet', badgeEtoiles(), zone);
     let l;
     try { l = await api('etoilesEnAttente'); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
-    if (!l.length) { D.attente = 0; store.set('donnees', D); zone.replaceChildren(el('p', { class: 'vide', text: 'Rien à valider.' }), formCarnet(() => { location.hash = '#/p/carnet'; }, 'Un mot pour le carnet ?')); return; }
+    if (!l.length) { D.attente = 0; store.set('donnees', D); zone.replaceChildren(el('p', { class: 'vide', text: 'Rien à valider.' }), el('a', { class: 'btn plein large', href: '#/', text: 'Revenir à l\'accueil' })); return; }
     const cases = l.map(e => { const c = el('input', { type: 'checkbox', checked: true }); c.eid = e.id; return el('label', { class: 'case' }, c, el('span', {}, el('b', { text: '+' + e.delta + ' ★ ' }), e.motif, el('span', { class: 'muted petit', text: ' · ' + String(e.horodatage).slice(5, 16).replace('T', ' ') }))); });
-    const go = el('button', { class: 'btn ok large', type: 'button', text: 'Valider', onclick: async () => {
+    const note = formCarnet(null, 'Un mot pour le carnet ? (facultatif)', true);
+    const go = el('button', { class: 'btn ok large', type: 'button', text: 'Valider et revenir à l\'accueil', onclick: async () => {
       go.disabled = true;
       const refuses = cases.filter(c => !c.querySelector('input').checked).map(c => String(c.querySelector('input').eid));
       try {
         const r = await api('validerEtoiles', { refuses }); D.etoiles = r.etoiles; D.attente = 0; store.set('donnees', D);
-        toast('Étoiles validées.');
-        zone.replaceChildren(el('div', { class: 'retour ok' }, el('b', { text: 'C\'est fait : ' + D.etoiles + ' étoiles dans la tirelire.' })),
-          formCarnet(() => { location.hash = '#/p/carnet'; }, 'Un mot pour le carnet ? (facultatif)'),
-          el('a', { class: 'btn discret large', href: '#/', text: 'Passer' }));
-      } catch (e) { toast(e.message, true); go.disabled = false; }
+        const e = note.entree();
+        if (e) { try { await api('ajouterCarnet', { entree: e }); } catch (er) { toast('Étoiles validées, mais la note n\'a pas pu être enregistrée.', true); } }
+        toast('Étoiles validées : ' + D.etoiles + ' dans la tirelire.' + (e ? ' Note enregistrée.' : ''));
+        /* Retour à l'accueil de Faël, espace parents refermé */
+        parentOk = false; location.hash = '#/';
+      } catch (er) { toast(er.message, true); go.disabled = false; }
     } });
-    zone.replaceChildren(el('p', { class: 'muted petit', text: 'Décoche ce qui ne doit pas compter (par exemple une séance faite trop vite).' }), ...cases, go);
+    zone.replaceChildren(el('p', { class: 'muted petit', text: 'Décoche ce qui ne doit pas compter (par exemple une séance faite trop vite).' }), ...cases, note, go);
   }
 
   /* ---------- Mode parent pendant une séance (cadenas) ---------- */
