@@ -238,3 +238,18 @@ label.case input{width:26px; height:26px; flex:none}
 .tuile.recompense > span:nth-child(2), .choix-fael .tuile > span:nth-child(2){flex:1 1 150px; min-width:0}
 .tuile.recompense > .btn, .tuile.recompense > .rangee, .choix-fael .tuile > .rangee{margin-left:auto}
 .onglets a{max-width:96px; padding:0 2px} .onglets a small{font-size:.68rem; white-space:nowrap}
+/* ---------- Aide et visite guidée ---------- */
+.aide-btn{font-weight:800; font-size:1.25rem; color:var(--accent)}
+.aide-section .sommaire{gap:6px}
+.aide-corps{display:flex; flex-direction:column; gap:8px; margin-top:8px; line-height:1.5}
+.aide-corps ul{margin:0; padding-left:1.2em; display:flex; flex-direction:column; gap:6px}
+.aide-corps p{margin:0}
+.visite{position:fixed; left:12px; right:12px; bottom:84px; z-index:60; max-width:560px; margin:0 auto; padding:14px 16px; border-radius:18px;
+  background:var(--paper); border:2px solid var(--accent); box-shadow:0 10px 30px rgba(0,0,0,.3); display:flex; flex-direction:column; gap:8px}
+.visite p{margin:0; line-height:1.5}
+.visite-tete{display:flex; justify-content:space-between; align-items:center} .visite-tete small{color:var(--muted); font-weight:700}
+.visite-boutons{display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap}
+body.en-visite .wrap{padding-bottom:280px}
+.onglets a.repere{outline:3px solid var(--accent); outline-offset:-3px; animation:respire 1.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.onglets a.repere{animation:none}}
+button.tuile{width:100%; text-align:left; border:0; font:inherit; color:inherit; cursor:pointer}

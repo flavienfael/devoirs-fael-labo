@@ -411,7 +411,133 @@
       el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
   }
   const moteurAJour = () => !!(D && Array.isArray(D.taches));
-  function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), moteurAJour() ? null : el('p', { class: 'alerte', text: '⚠️ Le moteur n\'est pas à jour : redéploie le code v5.2 dans Apps Script (Gérer les déploiements → Nouvelle version). Sans lui, la semaine, le carnet et la validation des étoiles ne marchent pas.' }), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
+
+  /* ---------- Aide côté parents : « ? » par section, aide générale, visite guidée ---------- */
+  const AIDE = {
+    accueil: { titre: 'L\'accueil de Faël', icone: '🏠',
+      quoi: 'L\'écran que Faël voit en ouvrant l\'appli. Tout y est pensé pour qu\'il sache quoi faire sans aide.',
+      comment: ['En haut, sa tirelire : ses étoiles, celles qui attendent votre validation, et la prochaine récompense avec une jauge.',
+        '« Mes devoirs pour… » : les devoirs du prochain jour d\'école, tirés de l\'onglet Semaine. Il touche une ligne, lance un minuteur de 10 minutes, ouvre l\'exercice lié, puis coche.',
+        'La barre de recherche et les matières pour retrouver un exercice. En mode parent (après le code), la même barre propose aussi : créer un exercice avec le texte tapé, l\'ajouter à la semaine, ou l\'envoyer comme demande à l\'IA.',
+        '« J\'ai fini ! » : il montre ses étoiles gagnées ; un parent les valide avec le code.',
+        '« Espace parents » : protégé par le code parents (Réglages).'],
+      astuce: 'Le mode parent reste ouvert jusqu\'à « Verrouiller » ou la validation des étoiles : pensez à verrouiller avant de rendre le téléphone.' },
+    semaine: { titre: 'Semaine', icone: '📅',
+      quoi: 'Préparer les devoirs donnés par la maîtresse pour toute la semaine, et savoir ce qu\'il reste à préparer.',
+      comment: ['« Ajouter les devoirs de la semaine » : prenez l\'agenda en photo ou tapez les devoirs ; l\'IA les range par jour de remise (pas d\'école le mercredi).',
+        'Chaque devoir liste ce qu\'il faut préparer (photo de la leçon, exercice, matériel, signature…). Touchez un besoin quand il est prêt : il passe au vert.',
+        '« Préparer l\'exercice » crée un exercice à partir d\'une photo ou du texte, et le relie au devoir. Ou reliez un exercice existant.',
+        'La note entre parents sert à vous répartir le travail (« je m\'en occupe mardi »).',
+        'Les flèches en haut changent de semaine. Le week-end, c\'est la semaine qui vient qui s\'affiche.'],
+      fael: 'Le soir, Faël voit sur son accueil les devoirs du prochain jour d\'école, dans l\'ordre, avec l\'exercice à faire.',
+      astuce: 'Le résumé en haut (« 3 choses à préparer ») se met au vert quand tout est prêt.' },
+    exercices: { titre: 'Exercices', icone: '✏️',
+      quoi: 'Créer de nouveaux exercices et demander des changements à l\'IA.',
+      comment: ['« À partir d\'une photo ou d\'un texte » : photographiez la leçon ; l\'IA la lit, puis prépare l\'exercice. Il est disponible tout de suite.',
+        'Saisie directe : mots de dictée, conjugaison, vocabulaire anglais ou questions à choix, que vous tapez vous-même.',
+        '« Une demande, un retour ? » : écrivez ce qui ne va pas (« trop dur », « moins de questions »…). L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi ; c\'est annulable.',
+        'Pour modifier un exercice : barre de recherche de l\'accueil en mode parent (crayon à côté), ou le cadenas pendant une séance.'],
+      fael: 'Faël ne tape jamais de mot : il répond en choisissant. L\'écriture se fait sur papier.',
+      astuce: 'Chaque modification garde l\'ancienne version : « Versions précédentes » dans l\'exercice permet de revenir en arrière.' },
+    etoiles: { titre: 'Étoiles et récompenses', icone: '⭐',
+      quoi: 'Le système de motivation : Faël gagne des étoiles, vous les validez, il les échange contre des récompenses que vous choisissez.',
+      comment: ['Une étoile par bonne réponse, 2 de bonus en fin de séance, 2 par devoir coché, 2 par réponse juste au défi.',
+        'Les étoiles s\'affichent tout de suite chez Faël, puis attendent votre validation : « Valider les étoiles », où vous pouvez décocher une séance bâclée.',
+        'Les récompenses : créez-les avec une image et un prix. Repère : une séance rapporte 5 à 12 étoiles.',
+        '« Faël a choisi » : quand il peut s\'offrir une récompense, il la choisit ; vous la donnez (les étoiles sont alors retirées) ou répondez « pas maintenant ».',
+        'Le résumé et le graphique montrent ce qu\'il gagne par semaine ; « déjà obtenues » garde l\'historique.'],
+      fael: 'Sa tirelire est en haut de l\'accueil ; en la touchant, il voit les récompenses, leur jauge et ce qu\'il a déjà gagné.',
+      astuce: 'La pastille sur l\'onglet Étoiles signale qu\'il y a quelque chose à valider ou une récompense choisie.' },
+    carnet: { titre: 'Carnet de bord', icone: '📓',
+      quoi: 'Votre journal de suivi, partagé entre parents, pour repérer ce qui aide Faël et ce qui le gêne.',
+      comment: ['Une note en quelques secondes : qui écrit, concentration, humeur, autonomie et sommeil de 1 à 5, et une remarque. Plusieurs notes par jour possibles.',
+        'Vous pouvez aussi noter au moment de valider les étoiles.',
+        'Bilans de la semaine et du mois : moyennes, résultats des exercices, alertes, et une lecture par l\'IA.',
+        'Alerte automatique si un critère reste à 2 ou moins trois jours de suite.',
+        '« Discuter du carnet avec l\'IA » : un fil à part qui connaît les notes récentes (sans le prénom).',
+        'Bilans automatiques par courriel : chaque dimanche et chaque 1er du mois.'],
+      astuce: 'Les notes du carnet nourrissent aussi les Conseils : plus vous notez, plus les réponses de l\'IA sont adaptées.' },
+    conseils: { titre: 'Conseils', icone: '💬',
+      quoi: 'Comprendre le TDA et trouver des pistes concrètes, appuyées sur des recherches vérifiées.',
+      comment: ['« Discuter » : posez vos questions à l\'IA ; elle s\'appuie sur la base de recherches et sur l\'état récent du carnet. Cochez « recherche web » pour des sources en direct.',
+        '« L\'essentiel » : les points clés en une page.',
+        '« Approfondir » : recommandations officielles et études, avec leur niveau de preuve.',
+        '« Dans l\'appli » : comment chaque principe est appliqué ici, avec un contrôle automatique sur les résultats réels.'],
+      astuce: 'Pas de conseil médical : pour un traitement ou un diagnostic, l\'IA renvoie vers le médecin.' },
+    reglages: { titre: 'Réglages', icone: '⚙️',
+      quoi: 'Adapter les séances à Faël et gérer le lien avec le moteur.',
+      comment: ['Mode concentration : questions par série (5 conseillé), nombre de séries, pauses qui bougent, lecture à voix haute, mode calme.',
+        'Code parents : protège l\'espace parents et la validation des étoiles.',
+        'Intelligence artificielle : « Tester les capacités » vérifie que l\'IA répond et lit les photos.',
+        'Demandes et retours : tout ce que vous avez demandé à l\'IA, annulable.',
+        'Relier l\'appli au moteur : une fois par téléphone.'] },
+    valider: { titre: 'Valider les étoiles', icone: '✅',
+      quoi: 'Confirmer les étoiles gagnées par Faël avant qu\'elles entrent dans sa tirelire.',
+      comment: ['Toutes les étoiles en attente sont cochées : décochez celles qui ne doivent pas compter.',
+        'Ajoutez si vous voulez une note pour le carnet (facultatif).',
+        '« Valider et revenir à l\'accueil » : les étoiles passent dans la tirelire, l\'espace parents se referme et le téléphone revient à Faël.'] },
+    seance: { titre: 'Pendant une séance (cadenas)', icone: '🔒',
+      quoi: 'Intervenir pendant que Faël travaille, sans perdre sa séance.',
+      comment: ['Le cadenas en haut à droite d\'un exercice ouvre le mode parent par-dessus la séance (code demandé).',
+        '« Comment lui expliquer autrement ? » : 3 façons d\'expliquer la notion, pour vous, plus le piège fréquent.',
+        '« Modifier l\'exercice » : corrigez en direct ; les changements comptent dès la séance suivante.',
+        '« Donner un retour à l\'IA » : signalez un problème sur cet exercice.'],
+      fael: 'Pour Faël, chaque question a un coup de pouce (la règle, jamais la réponse) et « Explique-moi autrement » (4 explications de l\'IA, qui défilent ensuite). En cas d\'erreur, la bonne réponse s\'affiche et il continue. En fin de série, un défi facultatif rapporte des étoiles en plus.' }
+  };
+  const ORDRE_AIDE = ['accueil', 'semaine', 'exercices', 'etoiles', 'carnet', 'conseils', 'reglages', 'valider', 'seance'];
+  function blocAide(cle, ouvert) {
+    const a = AIDE[cle];
+    return el('details', { class: 'carte aide-section', open: ouvert || null },
+      el('summary', { class: 'sommaire' }, el('span', { 'aria-hidden': 'true', text: a.icone + ' ' }), a.titre),
+      el('div', { class: 'aide-corps' },
+        el('p', {}, el('b', { text: 'À quoi ça sert : ' }), a.quoi),
+        el('b', { text: 'Comment ça marche :' }),
+        el('ul', {}, a.comment.map(t => el('li', { text: t }))),
+        a.fael ? el('p', {}, el('b', { text: 'Ce que voit Faël : ' }), a.fael) : null,
+        a.astuce ? el('p', { class: 'muted petit' }, el('b', { text: 'Astuce : ' }), a.astuce) : null));
+  }
+  /* Le « ? » d'une section : son explication en premier, puis toutes les autres */
+  function ouvrirAide(cle) {
+    const v = voile('Aide');
+    v.corps.replaceChildren(
+      cle && AIDE[cle] ? blocAide(cle, true) : null,
+      el('button', { class: 'btn plein large', type: 'button', text: '🧭 Lancer la visite guidée', onclick: () => { v.remove(); lancerVisite(); } }),
+      el('h3', { text: cle ? 'Toutes les sections' : 'Toutes les explications' }),
+      ...ORDRE_AIDE.filter(k => k !== cle).map(k => blocAide(k, false)));
+  }
+  const boutonAide = cle => el('button', { class: 'rond aide-btn', type: 'button', 'aria-label': 'Aide : ' + (AIDE[cle] ? AIDE[cle].titre : 'explications'), text: '?', onclick: () => ouvrirAide(cle) });
+
+  /* Visite guidée : parcourt les écrans, se relance à tout moment (aide ou Réglages) */
+  const ETAPES_VISITE = [
+    { route: '#/', cle: 'accueil', texte: 'Voici l\'accueil de Faël : sa tirelire, ses devoirs du soir, la recherche et « J\'ai fini ! ». En mode parent, la barre de recherche vous propose aussi des actions.' },
+    { route: '#/p/semaine', cle: 'semaine', texte: 'La Semaine : photographiez l\'agenda, l\'IA range les devoirs par jour. Les besoins passent au vert quand ils sont prêts ; Faël voit chaque soir ceux du lendemain.' },
+    { route: '#/p/exercices', cle: 'exercices', texte: 'Exercices : créez un exercice depuis une photo de leçon ou en saisie directe, et demandez des changements à l\'IA (annulables).' },
+    { route: '#/p/etoiles', cle: 'etoiles', texte: 'Étoiles : validez les étoiles gagnées, gérez les récompenses, donnez celles que Faël a choisies, suivez ce qu\'il gagne chaque semaine.' },
+    { route: '#/p/carnet', cle: 'carnet', texte: 'Carnet de bord : une note rapide (1 à 5) quand vous voulez, des bilans, des alertes, et un fil de discussion avec l\'IA. Bilans aussi par courriel.' },
+    { route: '#/p/conseils', cle: 'conseils', texte: 'Conseils : discutez avec l\'IA (base de recherches + état récent du carnet), ou lisez l\'essentiel et l\'approfondi.' },
+    { route: '#/p/reglages', cle: 'reglages', texte: 'Réglages : longueur des séances, pauses, voix, code parents, test de l\'IA et lien avec le moteur.' },
+    { route: '#/p/reglages', cle: 'seance', texte: 'Pendant un exercice, le cadenas en haut à droite ouvre le mode parent sans interrompre Faël. Et le « ? » en haut de chaque écran réexplique tout. Bonne découverte !' }
+  ];
+  function lancerVisite(k = 0) {
+    document.querySelectorAll('.visite').forEach(x => x.remove());
+    const e = ETAPES_VISITE[k]; if (!e) return;
+    parentOk = true;
+    if (location.hash !== e.route) location.hash = e.route; else router();
+    const fin = () => { document.querySelectorAll('.visite').forEach(x => x.remove()); store.set('visiteFaite', true); document.body.classList.remove('en-visite'); };
+    setTimeout(() => {
+      document.body.classList.add('en-visite');
+      document.querySelectorAll('.onglets a').forEach(a => a.classList.toggle('repere', a.getAttribute('href') === e.route));
+      document.body.append(el('div', { class: 'visite', role: 'dialog', 'aria-label': 'Visite guidée', 'data-route': e.route },
+        el('div', { class: 'visite-tete' }, el('b', { text: (AIDE[e.cle] ? AIDE[e.cle].icone + ' ' + AIDE[e.cle].titre : '') }), el('small', { text: (k + 1) + ' / ' + ETAPES_VISITE.length })),
+        el('p', { text: e.texte }),
+        el('div', { class: 'visite-boutons' },
+          el('button', { class: 'btn discret', type: 'button', text: 'Quitter', onclick: fin }),
+          k > 0 ? el('button', { class: 'btn', type: 'button', text: '‹ Avant', onclick: () => lancerVisite(k - 1) }) : null,
+          k < ETAPES_VISITE.length - 1 ? el('button', { class: 'btn plein', type: 'button', text: 'Suivant ›', onclick: () => lancerVisite(k + 1) })
+            : el('button', { class: 'btn plein', type: 'button', text: 'Terminer', onclick: () => { fin(); location.hash = '#/p/semaine'; } }))));
+    }, 250);
+  }
+  function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', el('span', { class: 'tete-droite' }, droite || null, boutonAide(titre === 'Valider les étoiles' ? 'valider' : actif))), moteurAJour() ? null : el('p', { class: 'alerte', text: '⚠️ Le moteur n\'est pas à jour : redéploie le code v5.2 dans Apps Script (Gérer les déploiements → Nouvelle version). Sans lui, la semaine, le carnet et la validation des étoiles ne marchent pas.' }), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
 
   /* ---------- Séance ---------- */
   function ecranSeance(id, test) {
@@ -695,6 +821,13 @@
     await dessiner();
   }
 
+  function ecranAide() {
+    pageP('Aide', 'reglages', null,
+      el('p', { class: 'muted', text: 'À quoi sert chaque partie de l\'appli, et comment elle fonctionne. Le « ? » en haut de chaque écran ouvre directement la bonne explication.' }),
+      el('button', { class: 'btn plein large', type: 'button', text: '🧭 Lancer la visite guidée', onclick: () => lancerVisite(0) }),
+      ...ORDRE_AIDE.map(k => blocAide(k, false)));
+  }
+
   /* ---------- Exercices : ajouter, demander un changement ---------- */
   const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
   function ecranExercices(cidChoisi) {
@@ -854,7 +987,8 @@
       el('p', { class: 'muted petit', text: 'La séance de Faël reste ouverte derrière : rien n\'est perdu. Ce que vous modifiez ici compte dès la prochaine séance.' }),
       el('button', { class: 'btn plein large', type: 'button', text: '💡 Comment lui expliquer autrement ?', onclick: expliquer }),
       el('button', { class: 'btn large', type: 'button', text: '✏️ Modifier l\'exercice', onclick: () => ecranEditeur(c.id, null, { cible: v.corps, apres: () => { toast('Enregistré. La séance continue ; les changements comptent dès la prochaine.'); v.remove(); } }) }),
-      el('button', { class: 'btn large', type: 'button', text: '💬 Donner un retour à l\'IA', onclick: () => v.corps.replaceChildren(encartDemande(c.id)) }));
+      el('button', { class: 'btn large', type: 'button', text: '💬 Donner un retour à l\'IA', onclick: () => v.corps.replaceChildren(encartDemande(c.id)) }),
+      el('button', { class: 'btn discret large', type: 'button', text: '? Aide sur ce mode parent', onclick: () => v.corps.replaceChildren(blocAide('seance', true), el('button', { class: 'btn discret', type: 'button', text: '‹ Retour', onclick: menu })) }));
     function expliquer() {
       const diff = el('textarea', { style: 'min-height:70px' }); diff.value = q ? 'Question en cours : ' + q.enonce + (q.bonne ? ' (réponse : ' + q.bonne + ')' : '') : '';
       const res = el('div', { class: 'liste' });
@@ -1293,6 +1427,10 @@
       el('button', { class: 'btn plein large', type: 'button', text: 'Enregistrer', onclick: async () => {
         try { D.reglages = await api('enregistrerReglages', { reglages: { taille: Number(sT.value), series: Number(sS.value), pauses: sP.value === 'oui', dureePause: Number(sD.value), voix: sV.value === 'oui', calme: sC.value === 'oui', codeParents: code.value.trim() } }); store.set('donnees', D); toast('Enregistré.'); }
         catch (e) { toast(e.message, true); } } }),
+      el('h3', { text: 'Aide' }),
+      el('div', { class: 'liste' },
+        el('a', { class: 'tuile', href: '#/p/aide' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '❓' }), el('span', {}, el('span', { class: 't', text: 'Toutes les explications' }), el('span', { class: 's', text: 'À quoi sert chaque section, comment elle marche' })), el('span', { class: 'fl', text: '›' })),
+        el('button', { class: 'tuile', type: 'button', onclick: () => lancerVisite(0) }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '🧭' }), el('span', {}, el('span', { class: 't', text: 'Relancer la visite guidée' }), el('span', { class: 's', text: 'Découvrir tout l\'espace parents en 8 étapes' })), el('span', { class: 'fl', text: '›' }))),
       el('h3', { text: 'Moteur et suivi' }),
       el('div', { class: 'liste' },
         el('a', { class: 'tuile', href: '#/p/demandes' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📨' }), el('span', {}, el('span', { class: 't', text: 'Demandes et retours' }), el('span', { class: 's', text: 'Ce que vous avez demandé à l\'IA, annulable' })), el('span', { class: 'fl', text: '›' })),
@@ -1303,6 +1441,8 @@
   async function router() {
     const h = location.hash.replace(/^#\/?/, ''), [a, b, c] = h.split('/');
     document.querySelectorAll('.voile').forEach(v => v.remove());
+    /* On quitte la visite guidée si on va ailleurs que l'étape en cours */
+    document.querySelectorAll('.visite').forEach(v => { if (v.dataset.route !== (location.hash || '#/')) { v.remove(); document.body.classList.remove('en-visite'); } });
     if (a === 'relier' || !store.get('cfg', null)) return ecranRelier();
     if (!D) { app().replaceChildren(el('p', { class: 'vide', text: 'Chargement…' })); try { await charger(); } catch (e) { toast(e.message, true); return ecranRelier(); } }
     if (!a) return ecranAccueil();
@@ -1310,9 +1450,10 @@
     if (a === 'tache') return ecranTache(b);
     if (a === 'fini') return ecranFini();
     if (a === 'tirelire') return ecranTirelire();
-    if (a === 'parents') return porteParents(() => ecranSemaine());
+    if (a === 'parents') return porteParents(() => { ecranSemaine(); if (!store.get('visiteFaite', false)) setTimeout(() => lancerVisite(0), 500); });
     if (a === 'essai') return porteParents(() => ecranSeance(b, true));
     if (a === 'p') return porteParents(() => {
+      if (b === 'aide') return ecranAide();
       if (b === 'semaine') return ecranSemaine(c);
       if (b === 'exercices' || b === 'ajouter') return ecranExercices();
       if (b === 'retour') return ecranExercices(c);
