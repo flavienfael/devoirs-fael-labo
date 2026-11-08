@@ -400,7 +400,8 @@
     return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
       el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'carnet' && D && D.attente ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
   }
-  function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
+  const moteurAJour = () => !!(D && Array.isArray(D.taches));
+  function pageP(titre, actif, droite, ...k) { page(tete(titre, '#/', droite), moteurAJour() ? null : el('p', { class: 'alerte', text: '⚠️ Le moteur n\'est pas à jour : redéploie le code v5.2 dans Apps Script (Gérer les déploiements → Nouvelle version). Sans lui, la semaine, le carnet et la validation des étoiles ne marchent pas.' }), ...k, navParents(actif)); document.body.classList.add('avec-onglets'); }
 
   /* ---------- Séance ---------- */
   function ecranSeance(id, test) {
@@ -1032,6 +1033,26 @@
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); ok({ b64: c.toDataURL('image/jpeg', 0.85).split(',')[1], apercu: c.toDataURL('image/jpeg', 0.4) }); };
       img.onerror = () => ko(new Error('Image illisible.')); img.src = url; });
   }
+  /* Remise à zéro : confirmation dans le bouton lui-même (pas de fenêtre du navigateur, parfois bloquée dans l'appli installée) */
+  function boutonRemiseAZero() {
+    let arme = false, minuterie = null;
+    const bt = el('button', { class: 'btn discret large', type: 'button', text: '↺ Remettre les étoiles à zéro', onclick: async () => {
+      if (!arme) {
+        arme = true; bt.classList.add('danger'); bt.textContent = 'Touche encore pour confirmer : tirelire à 0';
+        minuterie = setTimeout(() => { arme = false; bt.classList.remove('danger'); bt.textContent = '↺ Remettre les étoiles à zéro'; }, 5000);
+        return;
+      }
+      clearTimeout(minuterie); bt.disabled = true; bt.textContent = 'Remise à zéro…';
+      try {
+        await charger(); /* solde à jour avant de le ramener à 0 */
+        /* Étoiles pas encore validées : effacées si le moteur le permet (v5 et plus) */
+        try { const att = await api('etoilesEnAttente'); if (att.length) await api('validerEtoiles', { refuses: att.map(e => String(e.id)) }); } catch (e) { /* moteur plus ancien : rien en attente */ }
+        const x = (D.etoiles || 0) ? await api('ajusterEtoiles', { delta: -(D.etoiles || 0), motif: 'remise à zéro par un parent' }) : { etoiles: 0 };
+        D.etoiles = x.etoiles; D.attente = 0; store.set('donnees', D); toast('Étoiles remises à zéro.'); ecranEtoiles();
+      } catch (e) { toast('Remise à zéro impossible : ' + e.message, true); bt.disabled = false; arme = false; bt.classList.remove('danger'); bt.textContent = '↺ Remettre les étoiles à zéro'; }
+    } });
+    return bt;
+  }
   async function ecranEtoiles() {
     const nom = el('input', { placeholder: 'Ex. : 15 minutes de jeu' }), cout = el('input', { type: 'number', min: 1, value: 10 });
     const hist = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
@@ -1048,18 +1069,7 @@
       el('h3', { text: 'Ajuster à la main' }),
       el('div', { class: 'rangee' }, [-5, -1, 1, 5].map(n => el('button', { class: 'btn discret', type: 'button', text: (n > 0 ? '+' : '') + n, onclick: async () => { try { const x = await api('ajusterEtoiles', { delta: n, motif: 'ajustement parent' }); D.etoiles = x.etoiles; store.set('donnees', D); ecranEtoiles(); } catch (e) { toast(e.message, true); } } }))),
       el('h3', { text: 'Remise à zéro' }),
-      el('button', { class: 'btn discret large', type: 'button', text: '↺ Remettre les étoiles à zéro', onclick: async ev => {
-        const bt = ev.currentTarget;
-        if (!confirm('Remettre la tirelire de Faël à 0 étoile ? Les étoiles pas encore validées seront aussi effacées. L\'historique garde une trace de la remise à zéro.')) return;
-        bt.disabled = true;
-        try {
-          await charger(); /* solde à jour avant de le ramener à 0 */
-          const att = await api('etoilesEnAttente');
-          if (att.length) await api('validerEtoiles', { refuses: att.map(e => String(e.id)) });
-          const x = (D.etoiles || 0) ? await api('ajusterEtoiles', { delta: -(D.etoiles || 0), motif: 'remise à zéro par un parent' }) : { etoiles: 0 };
-          D.etoiles = x.etoiles; D.attente = 0; store.set('donnees', D); toast('Étoiles remises à zéro.'); ecranEtoiles();
-        } catch (e) { toast(e.message, true); bt.disabled = false; }
-      } }),
+      boutonRemiseAZero(),
       el('h3', { text: 'Historique' }), hist);
     try { const h = await api('historiqueEtoiles'); hist.replaceChildren(...(h.length ? h.slice(0, 30).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16) }))) : [el('p', { class: 'vide', text: 'Rien pour l\'instant.' })])); }
     catch (e) { hist.replaceChildren(el('p', { class: 'muted petit', text: 'Historique indisponible hors ligne.' })); }

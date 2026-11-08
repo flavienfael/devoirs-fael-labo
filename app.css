@@ -208,3 +208,4 @@ label.case input{width:26px; height:26px; flex:none}
 .feuille.defi .grand{font-size:3rem; line-height:1}
 .aides{display:flex; flex-direction:column; gap:10px}
 .aides:empty, .aides > div:empty{display:none}
+.btn.danger{background:var(--bad-soft); border-color:var(--bad); color:var(--bad)}
