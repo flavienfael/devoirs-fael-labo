@@ -483,7 +483,7 @@
         t('#/p/devoirs', '📋', 'Mes devoirs du jour', 'Préparer la liste d\'étapes de Faël'),
         t('#/p/etoiles', '★', 'Étoiles et récompenses', (D.etoiles || 0) + ' étoiles'),
         t('#/p/journal', '📝', 'Journal d\'observation', '30 secondes par jour'),
-        t('#/p/conseils', '💬', 'Conseils', 'Pour accompagner Faël'),
+        t('#/p/conseils', '💬', 'Conseils', 'L\'essentiel, approfondir, dans l\'appli, discuter'),
         t('#/p/reglages', '⚙️', 'Réglages', 'Séries, pauses, voix, code parents'),
         t('anciennes-applis.html', '🗂️', 'Anciennes applis', 'Pour comparer'),
         t('#/relier', '🔗', 'Relier l\'appli au moteur', D.mistral ? 'IA activée (' + D.ia + ')' : 'IA pas encore activée')));
@@ -717,11 +717,80 @@
     catch (e) { liste.replaceChildren(el('p', { class: 'muted petit', text: 'Indisponible hors ligne.' })); }
   }
 
-  async function ecranConseils() {
+  /* Conseils : l'essentiel, l'approfondi, la mise en œuvre dans l'appli (avec contrôle), et une discussion avec l'IA */
+  let ongletConseils = 'essentiel', cacheConseils = null;
+  async function ecranConseils(onglet) {
+    if (onglet) ongletConseils = onglet;
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
-    page(tete('Conseils', '#/parents'), zone);
-    try { const c = await api('conseils'); zone.replaceChildren(...c.sections.map(s => el('section', { class: 'carte' }, el('h2', { text: s.titre }), el('ul', {}, s.points.map(p => el('li', { text: p })))))); }
-    catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Conseils indisponibles hors ligne.' })); }
+    const ONG = [['essentiel', 'L\'essentiel'], ['approfondi', 'Approfondir'], ['appli', 'Dans l\'appli'], ['discuter', 'Discuter']];
+    const chips = el('div', { class: 'chips' }, ONG.map(([k, lib]) => el('button', { type: 'button', 'aria-pressed': String(k === ongletConseils), text: lib, onclick: () => ecranConseils(k) })));
+    page(tete('Conseils', '#/parents'), chips, zone);
+    try {
+      if (!cacheConseils) cacheConseils = await api('conseils');
+      const c = cacheConseils;
+      if (ongletConseils === 'essentiel') zone.replaceChildren(...c.essentiel.map(s => el('section', { class: 'carte' }, el('h2', { text: s.titre }), el('ul', {}, s.points.map(p => el('li', { text: p }))))),
+        el('p', { class: 'muted petit', text: 'Pour aller plus loin : onglet « Approfondir ». Recherches vérifiées le ' + c.maj + '.' }));
+      else if (ongletConseils === 'approfondi') zone.replaceChildren(
+        el('p', { class: 'muted petit', text: 'Synthèse des recommandations de la HAS (2024) et des méta-analyses récentes, avec les tailles d\'effet. Recherches vérifiées le ' + c.maj + '. Le doc « TDA et apprentissages de Faël » dans Claude contient tous les liens.' }),
+        ...c.approfondi.map(s => el('details', { class: 'carte', open: s === c.approfondi[0] }, el('summary', { style: 'cursor:pointer;font-weight:700;min-height:44px;display:flex;align-items:center', text: s.titre }),
+          s.texte ? el('p', { style: 'margin:8px 0', text: s.texte }) : null, el('ul', {}, s.points.map(p => el('li', { style: 'margin:6px 0', text: p }))))));
+      else if (ongletConseils === 'appli') await ongletAppli(c, zone);
+      else ongletDiscuter(zone);
+    } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); }
+  }
+
+  async function ongletAppli(c, zone) {
+    const controle = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Calcul du contrôle…' }));
+    zone.replaceChildren(
+      el('section', { class: 'carte' }, el('h2', { text: 'Contrôle automatique' }), el('p', { class: 'muted petit', text: 'Recalculé à chaque ouverture, à partir des réglages et des résultats réels des 14 derniers jours. Les seuils sont des repères de pratique, pas des normes scientifiques.' }), controle),
+      el('p', { text: c.appli.intro }),
+      ...c.appli.principes.map(p => el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:6px' },
+        el('b', { text: p.principe }), el('span', {}, el('span', { class: 'badge', text: 'Dans l\'appli' }), ' ', p.application), el('span', { class: 'muted petit' }, el('b', { text: 'Garantie : ' }), p.garantie))),
+      el('section', { class: 'carte' }, el('h2', { text: 'Comment c\'est assuré dans la durée' }), el('ul', {}, c.appli.assurance.map(p => el('li', { style: 'margin:6px 0', text: p })))));
+    const r = R(), lignes = [];
+    const ligne = (ok, titre, detail) => lignes.push(el('div', { class: 'tuile', style: 'align-items:flex-start' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: ok === true ? '🟢' : ok === false ? '🟠' : '⚪' }), el('span', {}, el('span', { class: 't', text: titre }), el('span', { class: 's', text: detail }))));
+    ligne(r.taille <= 5, 'Séries courtes', r.taille + ' questions par série, ' + r.series + ' série' + (r.series > 1 ? 's' : '') + (r.taille > 5 ? ' : au-delà de 5, pensez à vérifier qu\'il tient jusqu\'au bout.' : '.'));
+    ligne(!!r.pauses || r.series === 1, 'Pauses qui bougent', r.pauses ? 'Activées, ' + r.dureePause + ' s.' : 'Désactivées.');
+    ligne(!!r.voix, 'Consignes lues à voix haute', r.voix ? 'Activées.' : 'Désactivées : la mémoire de travail est davantage sollicitée.');
+    const exos = contenus(), sansLecon = exos.filter(x => !((x.donnees || {}).retiens || []).length).length;
+    ligne(sansLecon === 0 ? true : sansLecon < exos.length / 2 ? null : false, 'Leçons « Je retiens »', exos.length - sansLecon + ' exercice' + (exos.length - sansLecon > 1 ? 's' : '') + ' sur ' + exos.length + ' ont une leçon en cartes.');
+    try {
+      const s = await api('statistiques');
+      if (!s.premiersEssais) ligne(null, 'Résultats', 'Pas encore assez de séances sur 14 jours pour en tirer quelque chose.');
+      else {
+        ligne(s.reussitePremier >= 60 && s.reussitePremier <= 90, 'Niveau de difficulté', s.reussitePremier + ' % de bonnes réponses du premier coup sur ' + s.premiersEssais + ' questions' + (s.reussitePremier < 60 ? ' : peut-être trop difficile, donnez un retour sur les exercices concernés.' : s.reussitePremier > 90 ? ' : peut-être trop facile.' : ' : zone d\'entraînement confortable.') + (s.rattrapees ? ' ' + s.rattrapees + ' rattrapées au deuxième essai.' : ''));
+        if (s.dureeMediane != null) ligne(s.dureeMediane <= 40, 'Temps par question', 'Médiane ' + s.dureeMediane + ' s' + (s.dureeMediane > 40 ? ' : consignes peut-être trop longues ou décrochages.' : '.'));
+        ligne(s.joursActifs >= 4, 'Régularité', s.seances + ' séance' + (s.seances > 1 ? 's' : '') + ' sur ' + s.joursActifs + ' jour' + (s.joursActifs > 1 ? 's' : '') + ' en 14 jours.');
+      }
+    } catch (e) { ligne(null, 'Résultats', 'Indisponibles hors ligne.'); }
+    controle.replaceChildren(...lignes);
+  }
+
+  async function ongletDiscuter(zone) {
+    const fil = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement de la discussion…' }));
+    const ta = el('textarea', { style: 'min-height:90px', placeholder: 'Ex. : comment présenter le système d\'étoiles sans qu\'il devienne du chantage ? Que dit la recherche sur les devoirs le soir ?' });
+    const web = el('input', { type: 'checkbox', disabled: D.ia !== 'Mammouth' });
+    const bulle = m => el('div', { class: 'retour ' + (m.role === 'parent' ? 'info' : 'ok'), style: m.role === 'parent' ? 'margin-left:24px' : 'margin-right:12px' },
+      el('b', { class: 'petit', text: m.role === 'parent' ? 'Vous' : 'IA' + (m.modele ? ' · ' + m.modele : '') }), el('span', { style: 'white-space:pre-wrap', text: m.texte }),
+      m.sources ? el('span', { class: 'petit' }, 'Sources : ', String(m.sources).split('\n').filter(Boolean).map((u, k) => [k ? ' · ' : '', el('a', { href: u, target: '_blank', rel: 'noopener', text: (u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]) })])) : null);
+    const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer', disabled: !D.mistral, onclick: async () => {
+      const q = ta.value.trim(); if (!q) return ta.focus();
+      go.disabled = true; go.textContent = web.checked ? 'Recherche sur le web…' : 'Réflexion…';
+      fil.append(bulle({ role: 'parent', texte: q }));
+      try { const r = await api('discuter', { message: q, web: web.checked }); ta.value = ''; fil.append(bulle({ role: 'ia', texte: r.texte, sources: r.sources, modele: r.modele })); fil.lastChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      catch (e) { toast(e.message, true); fil.lastChild.remove(); }
+      go.disabled = false; go.textContent = 'Envoyer';
+    } });
+    zone.replaceChildren(
+      el('p', { class: 'muted petit', text: 'L\'IA répond à partir de la base de connaissances de cet onglet (recherches vérifiées). Cochez « recherche web » pour qu\'elle cherche aussi en direct : la question part alors vers Perplexity (Sonar, via Mammouth), un service américain.' }),
+      fil,
+      el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' }, ta,
+        el('label', { style: 'display:flex;gap:10px;align-items:center;min-height:44px' }, web, D.ia === 'Mammouth' ? 'Chercher aussi sur le web (sources citées)' : 'Recherche web : disponible avec Mammouth'),
+        go,
+        el('button', { class: 'btn discret', type: 'button', text: 'Nouvelle discussion', onclick: async () => { try { await api('nouveauFil'); ongletDiscuter(zone); } catch (e) { toast(e.message, true); } } })));
+    if (!D.mistral) fil.replaceChildren(el('p', { class: 'vide', text: 'L\'IA n\'est pas encore activée.' }));
+    try { const d = await api('discussion'); fil.replaceChildren(...(d.messages.length ? d.messages.map(bulle) : [el('p', { class: 'vide', text: 'Posez votre première question.' })])); }
+    catch (e) { fil.replaceChildren(el('p', { class: 'vide', text: 'Discussion indisponible hors ligne.' })); }
   }
 
   function ecranReglages() {
@@ -767,7 +836,7 @@
       if (b === 'devoirs') return ecranDevoirsParents();
       if (b === 'etoiles') return ecranEtoiles();
       if (b === 'journal') return ecranJournal();
-      if (b === 'conseils') return ecranConseils();
+      if (b === 'conseils') return ecranConseils(c);
       if (b === 'reglages') return ecranReglages();
       if (b === 'demandes') return ecranDemandes();
       if (b === 'retour') return ecranParents(c);
