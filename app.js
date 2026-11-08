@@ -91,11 +91,20 @@
     [/en/, 'an'], [/an/, 'en'], [/em/, 'am'], [/am/, 'em'], [/ain/, 'in'], [/ein/, 'in'], [/eau/, 'o'], [/au/, 'o'],
     [/c([aou])/, 'qu$1'], [/ph/, 'f'], [/(^|[^f])f(?!f)/, '$1ph'], [/([aeiou])s([aeiou])/, '$1z$2'], [/eur$/, 'eure'], [/ent(s?)$/, 'ant$1'],
     [/mps$/, 'ns'], [/[éèê]/, 'e'], [/gu([ei])/, 'g$1'], [/ç/, 'c']];
-  function variantes(mot) {
+  function variantes(mot, nb = 2) {
     const morceaux = mot.split(' '), w = morceaux.pop(), avant = morceaux.length ? morceaux.join(' ') + ' ' : '';
     const c = new Set();
     FAUTES.forEach(([re, f]) => { const v = w.replace(re, f); if (v !== w && v.length > 1) c.add(v); });
-    return melange([...c]).slice(0, 2).map(v => avant + v);
+    return melange([...c]).slice(0, nb).map(v => avant + v);
+  }
+  /* Coup de pouce de conjugaison : la règle, jamais la terminaison exacte de la réponse */
+  function regleConj(p, temps) {
+    const t = norm(temps || 'present'), g = ['je', 'tu'].includes(p) ? 1 : ['il', 'elle', 'on'].includes(p) ? 2 : p === 'nous' ? 3 : p === 'vous' ? 4 : 5;
+    if (/imparfait/.test(t)) return 'Pense à la règle : à l\'imparfait, on entend « ais », « ait », « ions », « iez » ou « aient » à la fin. Laquelle va avec « ' + p + ' » ?';
+    if (/futur/.test(t)) return 'Pense à la règle : au futur, on entend souvent le verbe à l\'infinitif, puis la fin qui change avec la personne. Dis la phrase tout bas.';
+    return ['', 'Pense à la règle : avec je et tu, le verbe finit souvent par -s (ou -x).', 'Pense à la règle : avec il, elle ou on, il n\'y a jamais de -s à la fin du verbe.',
+      'Pense à la règle : avec nous, le verbe finit presque toujours de la même façon. Tu t\'en souviens ?', 'Pense à la règle : avec vous, le verbe finit presque toujours de la même façon. Tu t\'en souviens ?',
+      'Pense à la règle : avec ils et elles, le verbe finit par des lettres qu\'on n\'entend pas.'][g];
   }
   function questions(c) {
     const d = c.donnees || {}, out = [];
@@ -120,23 +129,28 @@
             consigne: '**Écoute** et choisis le mot que tu entends.', enonce: 'Quel mot entends-tu ?', dire: [{ texte: mot }],
             choix: melange([nom, ...autres]), bonne: nom,
             aide: 'Réécoute le mot et regarde la première lettre.', explication: 'C\'était : ' + mot + '.' });
+        /* Remettre la phrase dans l'ordre (étiquettes à toucher, aucun clavier) */
+        const morceauxPhrase = String(m.phrase || '').replace(/[.!?…]+\s*$/, '').split(/\s+/).filter(Boolean);
+        if (morceauxPhrase.length >= 3 && morceauxPhrase.length <= 9) out.push({ cle: 'r:' + mot, mode: 'ordre', diff: n + 2,
+          consigne: 'Touche les étiquettes **dans l\'ordre** pour faire la phrase.', enonce: '', dire: [],
+          etiquettes: melange(morceauxPhrase), bonne: morceauxPhrase.join(' '),
+          aide: 'Cherche d\'abord le mot qui commence par une majuscule : c\'est le début de la phrase.', explication: m.phrase });
       });
     } else if (c.type === 'conjugaison') {
       const f = d.formes || {}, verbe = d.verbe || 'le verbe', temps = d.temps || 'présent';
       const valeurs = [...new Set(Object.values(f).filter(Boolean))];
       PRONOMS.filter(p => f[p]).forEach(p => {
         const forme = f[p], diff = ['nous', 'vous'].includes(p) ? 2 : ['ils', 'elles'].includes(p) ? 3 : 1;
-        const fin = forme.slice(-Math.min(3, Math.max(2, forme.length - 2)));
         const autres = melange(valeurs.filter(v => v !== forme)).slice(0, 3);
         out.push({ cle: 'c:' + p, mode: 'choix', diff,
           consigne: 'Choisis la bonne forme du verbe **' + verbe + '** au ' + temps + '.', enonce: pron(p, forme) + '____', dire: [{ texte: p }],
           choix: melange([forme, ...autres]), bonne: forme,
-          aide: 'Avec « ' + p + ' », la fin du verbe s\'écrit « …' + fin + ' ».', explication: pron(p, forme) + forme + '.' });
+          aide: regleConj(p, temps), explication: pron(p, forme) + forme + '.' });
         const lib = x => pron(x, forme).trim(), faux = melange(PRONOMS.filter(x => f[x] && f[x] !== forme)).slice(0, 2);
         if (faux.length === 2) out.push({ cle: 'p:' + p, mode: 'choix', diff: diff + 1,
           consigne: 'Choisis **qui** fait l\'action.', enonce: '____ ' + forme, dire: [{ texte: forme }],
           choix: melange([lib(p), ...faux.map(lib)]), bonne: lib(p),
-          aide: 'Regarde la fin du verbe : « …' + fin + ' ».', explication: pron(p, forme) + forme + '.' });
+          aide: 'Regarde bien la fin du verbe, puis pense à la règle : qui peut aller avec cette fin ?', explication: pron(p, forme) + forme + '.' });
       });
     } else if (c.type === 'vocabulaire') {
       const paires = (d.paires || []).filter(p => p.fr && p.en), lang = /anglais/i.test(d.langue || 'anglais') ? 'en-GB' : 'fr-FR';
@@ -145,11 +159,11 @@
         out.push({ cle: 'fe:' + p.fr, mode: 'choix', diff: i % 3,
           consigne: 'Comment dit-on en **anglais** ?', enonce: p.fr, dire: [{ texte: p.fr }],
           choix: melange([p.en, ...autresEn]), bonne: p.en, direChoix: lang,
-          aide: 'Le mot anglais commence par « ' + p.en.replace(/^(a|an|the)\s+/i, '').slice(0, 1) + ' ».', explication: p.fr + ' se dit « ' + p.en + ' ».' });
+          aide: 'Dis chaque mot anglais tout bas : lequel as-tu appris pour cet objet ?', explication: p.fr + ' se dit « ' + p.en + ' ».' });
         out.push({ cle: 'ef:' + p.en, mode: 'choix', diff: 1 + i % 3,
           consigne: '**Écoute** et choisis le mot en **français**.', enonce: p.en, dire: [{ texte: p.en, lang }],
           choix: melange([p.fr, ...autresFr]), bonne: p.fr,
-          aide: 'Réécoute le mot. Pense à ta trousse et à ton cartable.', explication: '« ' + p.en + ' » veut dire ' + p.fr + '.' });
+          aide: 'Réécoute le mot doucement et pense à la leçon : quand l\'as-tu entendu ?', explication: '« ' + p.en + ' » veut dire ' + p.fr + '.' });
       });
     } else if (c.type === 'qcm') {
       (d.questions || []).forEach((q, i) => {
@@ -162,6 +176,36 @@
     return out;
   }
   const estJuste = (q, rep) => rep === q.bonne;
+
+  /* Défi de fin de séance : 2 ou 3 questions bien plus difficiles, sans aide, +2 étoiles chacune */
+  function defis(c) {
+    const d = c.donnees || {}, out = [];
+    if (c.type === 'qcm') {
+      (d.defis && d.defis.length ? d.defis : (d.questions || []).slice(-3)).forEach((q, i) => {
+        const choix = (q.choix || []).filter(Boolean); if (choix.length < 2) return;
+        const bonne = choix[Math.min(Number(q.bonne) || 0, choix.length - 1)];
+        out.push({ cle: 'd:' + i, mode: 'choix', consigne: q.consigne || 'Choisis la bonne réponse.', enonce: q.question || '', dire: [{ texte: q.question }], choix: melange(choix), bonne, explication: q.explication || ('La bonne réponse est : ' + bonne + '.') });
+      });
+    } else if (c.type === 'mots') {
+      /* « Un seul mot est mal écrit » : il faut vérifier chaque mot, pas seulement en reconnaître un */
+      const mots = (d.mots || []).map(m => String(m.mot || '').trim()).filter(Boolean);
+      if (mots.length >= 4) melange(mots.map(mot => ({ mot, f: variantes(mot, 1) })).filter(x => x.f.length)).slice(0, 3).forEach(x => {
+        const autres = melange(mots.filter(m => m !== x.mot)).slice(0, 3);
+        out.push({ cle: 'd:' + x.mot, mode: 'choix', consigne: 'Attention : **un seul** de ces mots est **mal écrit**. Lequel ?', enonce: 'Trouve le mot mal écrit.', dire: [],
+          choix: melange([x.f[0], ...autres]), bonne: x.f[0], explication: 'Il fallait écrire : ' + x.mot + '.' });
+      });
+    } else if (c.type === 'conjugaison') {
+      const f = d.formes || {}, valeurs = [...new Set(Object.values(f).filter(Boolean))];
+      melange(PRONOMS.filter(p => f[p] && !['il', 'elle', 'on', 'je'].includes(p))).slice(0, 3).forEach(p => out.push({ cle: 'd:' + p, mode: 'choix',
+        consigne: 'Toutes les formes sont là : choisis la bonne pour **' + p + '** au ' + (d.temps || 'présent') + '.', enonce: pron(p, f[p]) + '____', dire: [{ texte: p }],
+        choix: melange(valeurs.slice(0, 6).includes(f[p]) ? valeurs.slice(0, 6) : [f[p], ...valeurs.filter(v => v !== f[p]).slice(0, 5)]), bonne: f[p], explication: pron(p, f[p]) + f[p] + '.' }));
+    } else if (c.type === 'vocabulaire') {
+      const paires = (d.paires || []).filter(p => p.fr && p.en), lang = /anglais/i.test(d.langue || 'anglais') ? 'en-GB' : 'fr-FR';
+      melange(paires).slice(0, 3).forEach(p => out.push({ cle: 'd:' + p.en, mode: 'choix', consigne: '**Écoute bien** : le mot n\'est pas écrit. Choisis ce qu\'il veut dire.', enonce: '🔊 Écoute le mot', dire: [{ texte: p.en, lang }],
+        choix: melange([p.fr, ...melange(paires.filter(x => x !== p)).slice(0, 4).map(x => x.fr)]), bonne: p.fr, explication: '« ' + p.en + ' » veut dire ' + p.fr + '.' }));
+    }
+    return out.length >= 2 ? out.slice(0, 3).map(q => Object.assign(q, { defi: true, diff: 9 })) : [];
+  }
 
   /* Erreurs à revoir (répétition espacée : J+1, J+3, J+7) */
   const ECARTS = [1, 3, 7];
@@ -374,7 +418,9 @@
       lot.sort((a, b) => a.diff - b.diff); const [premier, ...reste] = lot; series.push([premier, ...melange(reste)]);
     }
     if (dues.length) series.unshift(dues.map(q => Object.assign({}, q, { revoir: true })));
-    const etat = { s: 0, i: 0, essai: 1, journal: [], etoiles: 0, debut: Date.now(), tq: Date.now() };
+    const etat = { s: 0, i: 0, essai: 1, journal: [], etoiles: 0, etoilesDefi: 0, defi: null, debut: Date.now(), tq: Date.now() };
+    /* « Explique-moi autrement » : jusqu'à 4 explications de l'IA par question, puis elles défilent de la 1re à la 4e */
+    const explications = {}, vues = {};
     const retour = test ? '#/p/contenu/' + c.id : '#/';
     /* Cadenas : un parent ouvre le mode parent par-dessus la séance, sans la perdre */
     const droiteSeance = () => el('span', { class: 'tete-droite' }, badgeEtoiles(), test ? null : el('button', { class: 'rond', type: 'button', 'aria-label': 'Mode parent', text: '🔒', onclick: () => modeParentSeance(c, etat.q) }));
@@ -404,38 +450,70 @@
       const lot = series[etat.s], q = lot[etat.i]; etat.q = q;
       etat.essai = 1; etat.tq = Date.now();
       const points = el('div', { class: 'points', 'aria-hidden': 'true' }, lot.map((_, k) => el('i', { class: k < etat.i ? 'fait' : k === etat.i ? 'cours' : '' })));
-      const libSerie = q.revoir ? 'Je revois mes erreurs' : 'Série ' + (etat.s + 1 - (series[0][0] && series[0][0].revoir ? 1 : 0)) + ' sur ' + series.filter(l => !l[0].revoir).length;
+      const libSerie = q.defi ? '🏆 Défi · question ' + (etat.i + 1) + ' sur ' + lot.length : q.revoir ? 'Je revois mes erreurs' : 'Série ' + (etat.s + 1 - (series[0][0] && series[0][0].revoir ? 1 : 0)) + ' sur ' + series.filter(l => !l[0].revoir).length;
       const zoneRep = el('div'), zoneRetour = el('div'), zoneAide = el('div');
       const ecouter = () => dire([{ texte: q.consigne }, ...(q.dire || [])]);
+      const bExpl = el('button', { class: 'btn discret', type: 'button', text: (vues[q.cle] || 0) ? '🔄 Explique-moi encore autrement' : '💬 Explique-moi autrement', onclick: expliquer });
       const outils = el('div', { class: 'outils' },
         el('button', { class: 'btn discret', type: 'button', text: '🔊 Écouter', onclick: ecouter }),
-        el('button', { class: 'btn discret', type: 'button', text: '💡 Coup de pouce', onclick: () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide)) }));
+        q.defi ? null : el('button', { class: 'btn discret', type: 'button', text: '💡 Coup de pouce', onclick: () => zoneAide.replaceChildren(el('div', { class: 'aide' }, el('b', { text: 'Coup de pouce : ' }), q.aide)) }),
+        q.defi || !D.mistral ? null : bExpl);
+      async function expliquer() {
+        const k = vues[q.cle] || 0, liste = explications[q.cle] = explications[q.cle] || [];
+        vues[q.cle] = k + 1; bExpl.textContent = '🔄 Explique-moi encore autrement';
+        const montrer = i => {
+          const t = liste[i];
+          zoneAide.replaceChildren(el('div', { class: 'explique', role: 'status' },
+            el('div', { class: 'explique-tete' }, el('b', { text: '💬 Une autre façon de comprendre' }), el('small', { text: (i + 1) + ' sur 4' })),
+            el('p', { text: t }), el('button', { class: 'btn discret', type: 'button', text: '🔊 Écouter l\'explication', onclick: () => dire([{ texte: t }]) })));
+          dire([{ texte: t }]);
+        };
+        if (k >= 4) return montrer(k % 4);
+        if (liste[k]) return montrer(k);
+        bExpl.disabled = true;
+        zoneAide.replaceChildren(el('div', { class: 'explique attente', role: 'status' }, el('p', { text: 'Je cherche une façon de t\'expliquer…' })));
+        try {
+          const r2 = await api('expliquerAutrement', { contenu: c.id, consigne: String(q.consigne || '').replace(/\*\*/g, ''), question: q.enonce || '', choix: q.choix || q.etiquettes || [], bonne: q.bonne, n: k + 1, precedentes: liste.slice() });
+          liste[k] = r2.texte; montrer(k);
+        } catch (e) { vues[q.cle] = k; zoneAide.replaceChildren(el('div', { class: 'aide', text: 'Pas d\'explication pour l\'instant (réseau ?). Essaie le coup de pouce.' })); }
+        bExpl.disabled = false;
+      }
       function repondre(rep, bouton) {
         const juste = estJuste(q, rep);
         etat.journal.push({ contenu: c.id, question: q.cle, reponse: rep, juste, essai: etat.essai, duree_s: Math.round((Date.now() - etat.tq) / 1000) });
         if (juste) {
-          etat.etoiles++; if (q.revoir) noterReussite(c.id, q.cle);
+          if (q.defi) etat.etoilesDefi += 2; else etat.etoiles++;
+          if (q.revoir) noterReussite(c.id, q.cle);
           if (bouton) bouton.classList.add('juste');
           verrouiller();
           zoneRetour.replaceChildren(el('div', { class: 'retour ok', role: 'status' },
-            el('b', { class: 'titre', text: 'Bravo !' }), el('span', { class: 'plus1', text: '+1 étoile ★' }), el('span', { text: q.explication }),
+            el('b', { class: 'titre', text: q.defi ? 'Défi réussi !' : 'Bravo !' }), el('span', { class: 'plus1', text: q.defi ? '+2 étoiles ★★' : '+1 étoile ★' }), el('span', { text: q.explication }),
             el('button', { class: 'btn plein large', type: 'button', text: 'Continuer', onclick: suivant })));
           zoneRetour.querySelector('button').focus();
         } else {
           /* Erreur : la case choisie devient orangée, la bonne réponse s'affiche en vert, et on continue */
-          if (!test) noterErreur(c.id, q.cle);
+          if (!test && !q.defi) noterErreur(c.id, q.cle);
           if (bouton) bouton.classList.add('faux');
           verrouiller(true);
           zoneAide.replaceChildren();
           zoneRetour.replaceChildren(el('div', { class: 'retour ko', role: 'status' },
             el('b', { class: 'titre', text: 'On regarde ensemble' }), el('span', {}, 'La bonne réponse : ', el('b', { text: q.bonne })), el('span', { text: q.explication }),
-            el('span', { class: 'muted petit', text: 'Cette question reviendra pour t\'entraîner.' }),
+            el('span', { class: 'muted petit', text: q.defi ? 'C\'était un vrai défi : bravo d\'avoir essayé !' : 'Cette question reviendra pour t\'entraîner.' }),
             el('button', { class: 'btn plein large', type: 'button', text: 'Continuer', onclick: suivant })));
           zoneRetour.querySelector('button').focus();
         }
       }
       function verrouiller(montrer) {
         zoneRep.querySelectorAll('button,input').forEach(b => { b.disabled = true; if (montrer && b.dataset.v === q.bonne) b.classList.add('juste'); });
+      }
+      if (q.mode === 'ordre') {
+        const pris = [], ligne = el('div', { class: 'phrase-construite', 'aria-live': 'polite' }), tas = el('div', { class: 'etiquettes' });
+        const dessinerOrdre = () => {
+          ligne.replaceChildren(...(pris.length ? pris.map((k, i) => el('button', { class: 'etiquette posee', type: 'button', text: q.etiquettes[k], 'aria-label': 'Retirer ' + q.etiquettes[k], onclick: () => { pris.splice(i, 1); dessinerOrdre(); } })) : [el('span', { class: 'muted petit', text: 'Ta phrase se construit ici.' })]));
+          tas.replaceChildren(...q.etiquettes.map((m, k) => pris.includes(k) ? null : el('button', { class: 'etiquette', type: 'button', text: m, onclick: () => { pris.push(k); dessinerOrdre(); if (pris.length === q.etiquettes.length) repondre(pris.map(x => q.etiquettes[x]).join(' '), null); } })).filter(Boolean));
+        };
+        dessinerOrdre();
+        zoneRep.replaceChildren(ligne, tas);
       }
       if (q.mode === 'choix') {
         zoneRep.replaceChildren(el('div', { class: 'choix' + (q.choix.some(x => x.length > 22) ? ' un' : '') },
@@ -445,7 +523,7 @@
         el('div', { class: 'progression' }, el('span', { text: libSerie }), points),
         el('section', { class: 'carte cahier' },
           el('p', { class: 'consigne' }, el('span', { class: 'lib', text: 'Consigne' }), ' : ', riche(q.consigne)),
-          el('p', { class: 'enonce' }, q.enonce.split('____').map((p, k, a) => [p, k < a.length - 1 ? el('span', { class: 'trou', 'aria-label': 'à compléter' }) : null])),
+          !q.enonce ? null : el('p', { class: 'enonce' }, q.enonce.split('____').map((p, k, a) => [p, k < a.length - 1 ? el('span', { class: 'trou', 'aria-label': 'à compléter' }) : null])),
           outils, zoneAide, zoneRep, zoneRetour));
       if (R().voix && etat.i === 0) setTimeout(ecouter, 300);
     }
@@ -455,7 +533,7 @@
       etat.i++;
       if (etat.i < series[etat.s].length) return question();
       etat.s++; etat.i = 0;
-      if (etat.s >= series.length) return bilan();
+      if (etat.s >= series.length) return etat.defi === null && !test ? proposerDefi() : bilan();
       if (R().pauses && !series[etat.s - 1][0].revoir) return pause();
       question();
     }
@@ -471,10 +549,25 @@
       const t = setInterval(() => { reste--; txtNs.textContent = Math.max(0, reste); arcNs.setAttribute('stroke-dashoffset', C * (1 - reste / total)); if (reste <= 0) { clearInterval(t); dire([{ texte: 'C\'est reparti !' }]); } }, 1000);
     }
 
+    /* Petite fenêtre : le défi est proposé, jamais imposé */
+    function proposerDefi() {
+      const qs = defis(c); etat.defi = false;
+      if (!qs.length) return bilan();
+      const v = el('div', { class: 'voile centre', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Défi' }, el('div', { class: 'feuille defi' },
+        el('span', { class: 'grand', 'aria-hidden': 'true', text: '🏆' }), el('h2', { text: 'Un défi pour toi ?' }),
+        el('p', { text: qs.length + ' questions beaucoup plus difficiles, sans coup de pouce.' }),
+        el('p', {}, 'Chaque bonne réponse rapporte ', el('b', { text: '2 étoiles de plus' }), '. Si tu te trompes, tu ne perds rien.'),
+        el('button', { class: 'btn plein large', type: 'button', text: 'Je relève le défi !', onclick: () => { v.remove(); etat.defi = true; series.push(qs); etat.s = series.length - 1; etat.i = 0; question(); } }),
+        el('button', { class: 'btn discret large', type: 'button', text: 'Non merci, j\'ai fini', onclick: () => { v.remove(); bilan(); } })));
+      document.body.append(v);
+      dire([{ texte: 'Un défi pour toi ? ' + qs.length + ' questions plus difficiles, sans coup de pouce. Chaque bonne réponse rapporte 2 étoiles de plus.' }]);
+    }
+
     function bilan() {
-      const j = etat.journal, premiers = j.filter(x => x.juste).length;
-      const total = series.reduce((s, l) => s + l.length, 0);
-      const bonus = test ? 0 : 2; const gagne = etat.etoiles + bonus;
+      const jn = etat.journal.filter(x => !String(x.question).startsWith('d:')), jd = etat.journal.filter(x => String(x.question).startsWith('d:'));
+      const premiers = jn.filter(x => x.juste).length, j = etat.journal;
+      const total = series.filter(l => !l[0].defi).reduce((s, l) => s + l.length, 0);
+      const bonus = test ? 0 : 2; const gagne = etat.etoiles + etat.etoilesDefi + bonus;
       const phrase = premiers === total ? 'Tout juste ! Tu as été très concentré.' :
         'Tu as trouvé ' + premiers + ' réponses sur ' + total + '. Les autres reviendront pour t\'entraîner.';
       if (!test) envoyer({ resultats: j.map(x => Object.assign({ horodatage: new Date().toISOString().slice(0, 19).replace('T', ' ') }, x)), etoiles: gagne, motif: 'Séance : ' + c.titre })
@@ -482,7 +575,9 @@
       if (D && !test) { D.attente = (D.attente || 0) + gagne; store.set('donnees', D); }
       page(tete('Bilan', retour, badgeEtoiles()), el('section', { class: 'carte bilan' },
         el('h2', { text: 'Séance terminée' }), el('span', { class: 'gros', text: '+' + gagne + ' ★' }),
-        el('p', { text: phrase }), bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance. Quand tu as tout fini, touche « J\'ai fini ! » pour les faire valider.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
+        el('p', { text: phrase }),
+        jd.length ? el('p', { class: 'defi-bilan', text: '🏆 Défi : ' + jd.filter(x => x.juste).length + ' sur ' + jd.length + (etat.etoilesDefi ? ' · +' + etat.etoilesDefi + ' étoiles' : ' · bravo d\'avoir essayé') }) : null,
+        bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance. Quand tu as tout fini, touche « J\'ai fini ! » pour les faire valider.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
         el('a', { class: 'btn plein large', href: retour, text: test ? 'Retour au contenu' : 'Retour à mes cahiers' })));
       dire([{ texte: 'Séance terminée. ' + phrase }]);
     }
@@ -802,7 +897,7 @@
       lire = () => depuisTexte[ty](ta.value, consigne.value.trim());
     }
     const retiens = el('textarea', { style: 'min-height:120px' }); retiens.value = versTexte.retiens(d);
-    const donnees = () => Object.assign(lire(), { retiens: depuisTexte.retiens(retiens.value) });
+    const donnees = () => Object.assign(lire(), { retiens: depuisTexte.retiens(retiens.value) }, d.defis ? { defis: d.defis } : {});
     const objet = statut => ({ id: c.id, type: ty, titre: titre.value.trim(), matiere: matiere.value, theme: theme.value.trim() || 'Divers', donnees: donnees(), statut, source: c.source || 'saisie directe' });
     async function sauver(statut, puis) {
       const o = objet(statut);

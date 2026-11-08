@@ -189,3 +189,20 @@ label.case input{width:26px; height:26px; flex:none}
 @keyframes respire{50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.repere-lecture.cours{animation:none}}
 .btn-lien{align-self:flex-start; background:none; border:0; padding:6px 0; min-height:40px; color:var(--accent); text-decoration:underline; font-weight:600; font-size:.9rem}
+.explique{display:flex; flex-direction:column; gap:6px; padding:12px 14px; border-radius:14px; background:var(--accent-soft); border-left:5px solid var(--accent)}
+.explique p{margin:0; font-size:1.1rem; line-height:1.5}
+.explique-tete{display:flex; justify-content:space-between; align-items:center; gap:8px}
+.explique-tete small{color:var(--muted); font-weight:700}
+.explique.attente p{color:var(--muted); animation:respire 1.4s ease-in-out infinite}
+.explique .btn{align-self:flex-start; min-height:40px}
+.phrase-construite{min-height:60px; display:flex; flex-wrap:wrap; gap:8px; padding:10px; border-bottom:3px dotted var(--accent); margin-bottom:12px; align-items:center}
+.etiquettes{display:flex; flex-wrap:wrap; gap:10px}
+.etiquette{min-height:52px; padding:8px 16px; border-radius:12px; border:2px solid var(--seyes-bold); background:var(--paper); font-size:1.15rem; font-weight:700}
+.etiquette.posee{background:var(--accent-soft); border-color:var(--accent)}
+.etiquette:disabled{opacity:.7}
+.voile.centre{align-items:center; padding:16px}
+.feuille.defi{border-radius:18px; max-width:420px; text-align:center; display:flex; flex-direction:column; gap:10px; align-items:stretch; padding:20px}
+.feuille.defi h2{margin:0} .feuille.defi p{margin:0}
+.defi-bilan{font-weight:700}
+.feuille.defi{background:var(--paper); border:3px solid var(--star); box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.feuille.defi .grand{font-size:3rem; line-height:1}
