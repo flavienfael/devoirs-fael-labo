@@ -868,28 +868,37 @@
     const lien = prepa; prepa = null;
     const ia = D.mistral, nomIA = D.ia ? 'l\'IA (Mistral via ' + D.ia + ')' : 'l\'IA';
     const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })));
-    const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou lis une photo avec les boutons ci-dessus.' });
+    const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou prends une photo : le texte s\'écrit ici tout seul.' });
     if (lien && lien.texte) texte.value = lien.texte;
     const precision = el('input', { placeholder: 'Ex. : seulement les mots en bleu ; 10 questions faciles' });
     const photo = el('input', { type: 'file', accept: 'image/*' });
-    const apercu = el('div'), etat = el('p', { class: 'muted petit' });
-    let image = null;
-    const bLocal = el('button', { class: 'btn discret', type: 'button', text: 'Lire sur le téléphone', disabled: true, onclick: async () => {
-      bLocal.disabled = bIA.disabled = true;
-      try { const t = await lireSurTelephone('data:image/jpeg;base64,' + image.b64, m => { etat.textContent = m; }); texte.value = (t.trim() + '\n\n' + texte.value).trim(); etat.textContent = 'Texte lu : relis et corrige-le si besoin avant de continuer.'; }
-      catch (e) { etat.textContent = e.message; }
-      bLocal.disabled = false; bIA.disabled = !ia; } });
-    const bIA = el('button', { class: 'btn discret', type: 'button', text: 'Lire avec l\'IA', disabled: true, onclick: async () => {
-      bLocal.disabled = bIA.disabled = true; etat.textContent = 'L\'IA lit la photo…';
-      try { const r = await api('lirePhoto', { photoBase64: image.b64 }); texte.value = (r.texte.trim() + '\n\n' + texte.value).trim(); etat.textContent = 'Texte lu : relis et corrige-le si besoin avant de continuer.'; }
-      catch (e) { etat.textContent = e.message; }
-      bLocal.disabled = false; bIA.disabled = !ia; } });
+    const apercu = el('div');
+    let image = null, lecture = false;
+    /* Lecture automatique de la photo : par l'IA si elle est activée, sinon sur le téléphone.
+       Un petit repère discret à côté du champ texte dit qui a lu ; le téléphone sert de secours. */
+    const repere = el('span', { class: 'repere-lecture', role: 'status', hidden: true });
+    const secours = el('button', { class: 'btn-lien', type: 'button', hidden: true, text: 'Lire sur le téléphone à la place', onclick: () => lireLocal() });
+    const marquer = (etat, txt) => { repere.hidden = false; repere.className = 'repere-lecture ' + etat; repere.textContent = txt; };
+    const ajouter = t => { texte.value = (t.trim() + (texte.value.trim() ? '\n\n' + texte.value : '')).trim(); };
+    async function lireLocal() {
+      secours.hidden = true; lecture = true; go.disabled = true;
+      try { ajouter(await lireSurTelephone('data:image/jpeg;base64,' + image.b64, m => marquer('cours', '📱 ' + m))); marquer('ok', '📱 Lu sur le téléphone · relis si besoin'); }
+      catch (e) { marquer('ko', e.message); }
+      lecture = false; go.disabled = !ia;
+    }
+    async function lireIA() {
+      secours.hidden = true; lecture = true; go.disabled = true; marquer('cours', '✨ L\'IA lit la photo…');
+      try { const r = await api('lirePhoto', { photoBase64: image.b64 }); ajouter(r.texte || ''); marquer('ok', '✨ Lu par l\'IA · relis si besoin'); }
+      catch (e) { marquer('ko', '✨ L\'IA n\'a pas pu lire la photo.'); secours.hidden = false; }
+      lecture = false; go.disabled = !ia;
+    }
     photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f);
-      apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:160px;border-radius:8px' })); bLocal.disabled = false; bIA.disabled = !ia;
-      etat.textContent = 'Choisis comment lire la photo : sur le téléphone (gratuit, rien n\'est envoyé, idéal pour un texte imprimé) ou avec l\'IA (meilleur sur l\'écriture à la main).';
-      api('deposerPhoto', { base64: image.b64, commentaire: precision.value.trim() }).catch(() => {}); });
+      apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:160px;border-radius:8px' }));
+      api('deposerPhoto', { base64: image.b64, commentaire: precision.value.trim() }).catch(() => {});
+      ia ? lireIA() : lireLocal(); });
     const go = el('button', { class: 'btn plein large', type: 'button', text: 'Préparer l\'exercice avec l\'IA', disabled: !ia, onclick: async () => {
-      if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou lis une photo.', true);
+      if (lecture) return toast('Attends la fin de la lecture de la photo.', true);
+      if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou prends une photo.', true);
       go.disabled = true; go.textContent = 'L\'IA prépare le brouillon…';
       try {
         const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
@@ -904,11 +913,10 @@
       } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer l\'exercice avec l\'IA'; }
     } });
     page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Photo ou texte', (lien && lien.retour) || '#/p/exercices'),
-      ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La lecture sur le téléphone marche déjà.' }),
+      ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La photo est lue sur le téléphone en attendant.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('div', { class: 'champ' }, '1. Photo de la leçon (facultatif)', boutonsPhoto(photo)), apercu,
-        el('div', { class: 'rangee' }, bLocal, bIA), etat,
-        el('label', { class: 'champ' }, '2. Le texte de la leçon', texte),
+        el('label', { class: 'champ' }, el('span', { class: 'lib-lecture' }, '2. Le texte de la leçon', repere), texte, secours),
         el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
         el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
         el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. L\'exercice est disponible tout de suite ; tu peux le corriger ou donner un retour ensuite.' })),

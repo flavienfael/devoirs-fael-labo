@@ -181,3 +181,11 @@ label.case input{width:26px; height:26px; flex:none}
 :where(textarea, select, input:not([type=checkbox]):not([type=file]):not([type=search]):not([type=radio])){width:100%; min-height:48px; border:2px solid var(--seyes-bold); border-radius:12px; background:var(--paper); padding:10px 12px; font-size:17px}
 :where(textarea){resize:vertical; line-height:1.45}
 .note-ligne{flex-direction:column; align-items:flex-start}
+.lib-lecture{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap}
+.repere-lecture{font-size:.8rem; font-weight:600; padding:2px 10px; border-radius:999px; background:var(--accent-soft); color:var(--muted)}
+.repere-lecture.cours{animation:respire 1.4s ease-in-out infinite}
+.repere-lecture.ok{background:var(--good-soft); color:var(--good)}
+.repere-lecture.ko{background:var(--warn-soft); color:var(--warn)}
+@keyframes respire{50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.repere-lecture.cours{animation:none}}
+.btn-lien{align-self:flex-start; background:none; border:0; padding:6px 0; min-height:40px; color:var(--accent); text-decoration:underline; font-weight:600; font-size:.9rem}
