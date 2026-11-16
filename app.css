@@ -366,3 +366,12 @@ button[aria-busy=true]{opacity:.55;cursor:progress}
 .questions-claude ul{margin:4px 0 0;padding-left:20px}
 .ligne-avis{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .avis-mini{color:var(--star);letter-spacing:1px}
+.revue-format{display:flex;flex-direction:column;gap:10px;border:2px dashed var(--accent)}
+.revue-fael ul{margin:4px 0;padding-left:20px}
+.apercu{display:flex;flex-direction:column;gap:10px;margin:8px 0}
+.apercu-q{padding:12px;box-shadow:none;border:1px solid var(--relief)}
+.apercu-q .enonce{font-size:1.4rem}
+.apercu-q .choix .btn{min-height:52px;font-size:1.05rem}
+.apercu-q p.ok{color:var(--good)}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .avis-etoile:not(.pleine){color:#5f6b9a;border:2px solid #3a4677}}
+:root[data-theme=dark] .avis-etoile:not(.pleine){color:#5f6b9a;border:2px solid #3a4677}

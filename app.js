@@ -456,7 +456,7 @@
   const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['etoiles', '⭐', 'Étoiles'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
   function navParents(actif) {
     return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
-      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : k === 'exercices' && D && formatsAEvaluer() ? el('i', { class: 'pastille', 'aria-label': 'nouveau format à évaluer' }) : null)));
+      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
   }
   const moteurAJour = () => !!(D && Array.isArray(D.taches));
 
@@ -485,7 +485,7 @@
         'Saisie directe : mots de dictée, conjugaison, vocabulaire anglais ou questions à choix, que vous tapez vous-même.',
         '« Une demande, un retour ? » : écrivez ce qui ne va pas (« trop dur », « moins de questions »…). L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi ; c\'est annulable.',
         'Pour modifier un exercice : barre de recherche de l\'accueil en mode parent (crayon à côté), ou le cadenas pendant une séance.',
-        '🧪 Nouveaux formats : trois fois par semaine, Claude regarde vos demandes, les exercices et les avis de Faël. S\'il manque une façon de travailler (relier, classer…), il ajoute un format « en essai ». Il apparaît en haut de cet écran avec ses questions : notez de 1 à 5 si ça marche avec Faël et répondez. Claude décide ensuite avec vous : on garde, on ajuste ou on abandonne.',
+        '🧪 Nouveaux formats : trois fois par semaine, Claude regarde vos demandes, les exercices et les avis de Faël. S\'il manque une façon de travailler (relier, classer…), il ajoute un format « en essai ». Après que Faël l\'a pratiqué, vous le jugez dans « Valider les étoiles ». Claude décide ensuite avec vous : on garde, on ajuste ou on abandonne.',
         '⭐ Avis de Faël : de temps en temps (toujours après un format en essai, sinon une séance sur trois, une fois par jour au plus), le bilan lui demande s\'il a aimé, d\'une seule touche. Ses avis sont résumés ici.'],
       fael: 'Faël ne tape jamais de mot : il répond en choisissant. L\'écriture se fait sur papier.',
       astuce: 'Chaque modification garde l\'ancienne version : « Versions précédentes » dans l\'exercice permet de revenir en arrière.' },
@@ -524,6 +524,7 @@
     valider: { titre: 'Valider les étoiles', icone: '✅',
       quoi: 'Confirmer les étoiles gagnées par Faël avant qu\'elles entrent dans sa tirelire.',
       comment: ['Toutes les étoiles en attente sont cochées : décochez celles qui ne doivent pas compter.',
+        'Si Faël vient de pratiquer un format en essai, la même fenêtre montre ce qu\'il en a pensé, ses résultats, et le format lui-même (deux questions à essayer). Donnez votre retour à Claude par étoiles et/ou commentaire : il part avec la validation.',
         'Ajoutez si vous voulez une note pour le carnet (facultatif).',
         '« Valider et revenir à l\'accueil » : les étoiles passent dans la tirelire, l\'espace parents se referme et le téléphone revient à Faël.'] },
     seance: { titre: 'Pendant une séance (cadenas)', icone: '🔒',
@@ -1009,13 +1010,16 @@
   async function ecranValider() {
     const zone = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' }));
     pageP('Valider les étoiles', 'etoiles', badgeEtoiles(), zone);
-    let l;
-    try { l = await api('etoilesEnAttente'); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
+    let l, revues = [];
+    try { [l, revues] = await Promise.all([api('etoilesEnAttente'), api('revueFormats').catch(() => [])]); } catch (e) { zone.replaceChildren(el('p', { class: 'vide', text: 'Indisponible hors ligne.' })); return; }
+    revues = (revues || []).filter(f => CFT()[f.type]);
     if (!l.length) { D.attente = 0; store.set('donnees', D); zone.replaceChildren(el('p', { class: 'vide', text: 'Rien à valider.' }), el('a', { class: 'btn plein large', href: '#/', text: 'Revenir à l\'accueil' })); return; }
     const cases = l.map(e => { const c = el('input', { type: 'checkbox', checked: true }); c.eid = e.id; return el('label', { class: 'case' }, c, el('span', {}, el('b', { text: '+' + e.delta + ' ★ ' }), e.motif, el('span', { class: 'muted petit', text: ' · ' + String(e.horodatage).slice(5, 16).replace('T', ' ') }))); });
     const note = formCarnet(null, 'Un mot pour le carnet ? (facultatif)', true);
-    const go = el('button', { class: 'btn ok large', type: 'button', text: 'Valider et revenir à l\'accueil', onclick: async () => {
+    const blocsRevue = revues.map(blocRevueFormat);
+    const go = el('button', { class: 'btn ok large', type: 'button', text: revues.length ? 'Valider les étoiles et l\'avis, revenir à l\'accueil' : 'Valider et revenir à l\'accueil', onclick: async () => {
       go.disabled = true;
+      for (const b of blocsRevue) { const a = b.avis(); if (a) { try { await api('donnerAvis', { avis: a }); } catch (er) { toast('L\'avis sur le format n\'a pas pu partir : ' + er.message, true); } } }
       const refuses = cases.filter(c => !c.querySelector('input').checked).map(c => String(c.querySelector('input').eid));
       try {
         const r = await api('validerEtoiles', { refuses }); D.etoiles = r.etoiles; D.attente = 0; store.set('donnees', D);
@@ -1026,7 +1030,56 @@
         parentOk = false; location.hash = '#/';
       } catch (er) { toast(er.message, true); go.disabled = false; }
     } });
-    zone.replaceChildren(el('p', { class: 'muted petit', text: 'Décoche ce qui ne doit pas compter (par exemple une séance faite trop vite).' }), ...cases, note, go);
+    zone.replaceChildren(el('p', { class: 'muted petit', text: 'Décoche ce qui ne doit pas compter (par exemple une séance faite trop vite).' }), ...cases, ...blocsRevue, note, go);
+  }
+  /* Revue d'un format en essai, dans la fenêtre de validation : avis et résultats de Faël, aperçu jouable, vos étoiles et commentaires pour Claude */
+  function blocRevueFormat(f) {
+    const af = f.avisFael || [], r = f.resultats || {}, c = (f.contenus || [])[0];
+    const RESS = { facile: 'trop facile', bien: 'juste bien', dur: 'trop dur' };
+    let note = 0;
+    const notes = el('div', { class: 'avis-etoiles parent', role: 'group', 'aria-label': 'Ce format marche-t-il avec Faël ?' });
+    [1, 2, 3, 4, 5].forEach(n => notes.append(el('button', { type: 'button', class: 'avis-etoile', 'aria-label': n + ' sur 5', text: '★', onclick: () => { note = note === n ? 0 : n; notes.querySelectorAll('button').forEach((b, k) => b.classList.toggle('pleine', k < note)); } })));
+    const ta = el('textarea', { style: 'min-height:80px', placeholder: 'Votre retour à Claude : a-t-il compris le geste ? trop long ? il en redemande ?…' });
+    const bloc = el('section', { class: 'carte revue-format' },
+      el('div', { class: 'tache-tete' }, el('b', { text: '🧪 Nouveau format : ' + (f.nom || nomType(f.type)) }), el('span', { class: 'badge av', text: 'en essai' })),
+      f.description ? el('p', { class: 'petit', text: f.description }) : null,
+      el('div', { class: 'revue-fael' }, el('b', { class: 'petit', text: 'Ce qu\'en a pensé Faël' }),
+        af.length ? el('ul', {}, af.map(a => el('li', {}, el('span', { class: 'avis-mini', text: '★'.repeat(Number(a.note) || 0) + '☆'.repeat(3 - (Number(a.note) || 0)) }), ' ' + (a.titre || '') + (a.ressenti ? ' · ' + RESS[a.ressenti] : ''))))
+          : el('p', { class: 'muted petit', text: 'Il n\'a pas donné d\'avis cette fois.' }),
+        r.reponses ? el('p', { class: 'petit', text: 'Ses réponses : ' + r.justes + ' justes sur ' + r.reponses + (r.dureeMediane ? ' · environ ' + r.dureeMediane + ' s par question' : '') + '.' }) : null),
+      c ? el('details', { class: 'apercu-format', open: true }, el('summary', { class: 'sommaire', text: '👀 Voir le format (deux questions, à essayer ici)' }), apercuQuestions(c),
+        el('a', { class: 'btn discret', href: '#/essai/' + c.id, text: 'Faire tout l\'exercice en essai (rien n\'est compté)' })) : null,
+      f.reponseClaude ? el('div', { class: 'retour info' }, el('b', { class: 'petit', text: 'Claude :' }), el('span', { style: 'white-space:pre-wrap', text: f.reponseClaude })) : null,
+      f.questions ? el('div', { class: 'questions-claude' }, el('b', { class: 'petit', text: 'Les questions de Claude' }), el('ul', {}, String(f.questions).split(/\n+/).filter(Boolean).map(q => el('li', { text: q.replace(/^[-•]\s*/, '') })))) : null,
+      el('label', { class: 'champ' }, 'Ce format marche avec Faël ? (facultatif)', notes),
+      el('label', { class: 'champ' }, 'Votre retour à Claude (facultatif)', ta),
+      el('p', { class: 'muted petit', text: 'Envoyé avec la validation. Sans note ni commentaire, cette revue reviendra la prochaine fois.' }));
+    bloc.avis = () => (note || ta.value.trim()) ? { auteur: 'parent', type: f.type, contenu: (f.contenus || []).map(x => x.id).join(','), titre: (f.contenus || []).map(x => x.titre).join(' · ').slice(0, 200), note: note || '', texte: ta.value.trim() } : null;
+    return bloc;
+  }
+  /* Deux premières questions d'un exercice, jouables sans rien enregistrer */
+  function apercuQuestions(c) {
+    const qs = questions(c).slice(0, 2);
+    if (!qs.length) return el('p', { class: 'muted petit', text: 'Aperçu indisponible.' });
+    return el('div', { class: 'apercu' }, qs.map(q => {
+      const zone = el('div'), retour = el('div');
+      const repondre = (v, b) => {
+        const ok = estJuste(q, v);
+        zone.querySelectorAll('button').forEach(x => { x.disabled = true; if (x.dataset.v === q.bonne) x.classList.add('juste'); });
+        if (b && !ok) b.classList.add('faux');
+        retour.replaceChildren(el('p', { class: 'petit ' + (ok ? 'ok' : ''), text: (ok ? '✓ Juste. ' : '✗ La bonne réponse : ' + q.bonne + '. ') + (q.explication || '') }));
+      };
+      const M = window.CF_MODES && window.CF_MODES[q.mode];
+      try {
+        if (M) M(q, Object.assign(outilsTypes(), { zone, repondre }));
+        else if (q.mode === 'choix') zone.replaceChildren(el('div', { class: 'choix' }, q.choix.map(ch => el('button', { class: 'btn', type: 'button', 'data-v': ch, text: ch, onclick: e => repondre(ch, e.currentTarget) }))));
+        else zone.replaceChildren(el('p', { class: 'muted petit', text: 'Ce type de question se voit en essai.' }));
+      } catch (e) { zone.replaceChildren(el('p', { class: 'muted petit', text: 'Cette question ne s\'affiche pas bien : à signaler à Claude.' })); }
+      return el('div', { class: 'carte cahier apercu-q' },
+        el('p', { class: 'consigne' }, el('span', { class: 'lib', text: 'Consigne' }), ' : ', riche(q.consigne)),
+        q.enonce ? el('p', { class: 'enonce' }, q.enonce.split('____').map((p, k, a) => [p, k < a.length - 1 ? el('span', { class: 'trou' }) : null])) : null,
+        zone, retour);
+    }));
   }
 
   /* ---------- Mode parent pendant une séance (cadenas) ---------- */
@@ -1393,7 +1446,7 @@
 
   /* ---------- Nouveaux formats : évaluation par les parents (Claude lit les réponses à son passage suivant) ---------- */
   function blocFormatsEssai() {
-    const l = typesPlus().filter(t => t.statut === 'essai');
+    const l = []; /* la revue des formats se fait désormais dans « Valider les étoiles » */
     const av = (D && D.avis) || {}, faits = t => (D.contenus || []).filter(c => c.type === t).length;
     const resumeFael = Object.entries(av.contenus || {}).sort((a, b) => b[1].moyenne - a[1].moyenne);
     if (!l.length && !resumeFael.length) return null;
