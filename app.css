@@ -418,3 +418,4 @@ button[aria-busy=true]{opacity:.55;cursor:progress}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .e-new{background:#25336b;color:#cdd8ff}:root:not([data-theme=light]) .e-fait{background:#123d29;color:#9fe0bb}:root:not([data-theme=light]) .e-revoir{background:#4a2e10;color:#ffd2a1}:root:not([data-theme=light]) .e-su{background:#4a3c0c;color:#ffe48a}:root:not([data-theme=light]) .cahier-mat b{color:#fff}}
 :root[data-theme=dark] .e-new{background:#25336b;color:#cdd8ff}:root[data-theme=dark] .e-fait{background:#123d29;color:#9fe0bb}:root[data-theme=dark] .e-revoir{background:#4a2e10;color:#ffd2a1}:root[data-theme=dark] .e-su{background:#4a3c0c;color:#ffe48a}
 [hidden]{display:none !important}
+.version-moteur{font-weight:700;margin:0}.version-moteur.ko{color:#b45309}.version-moteur.ok{color:var(--good)}

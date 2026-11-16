@@ -1,6 +1,6 @@
 /* Cahiers de Faël — cache de l'appli pour l'ouvrir même sans réseau. Les données passent toujours par le moteur. */
-const CACHE = 'cahiers-labo-v26';
-const COQUILLE = ['./', 'index.html', 'app.css?v=15', 'types.js?v=1', 'app.js?v=26', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'cahiers-labo-v27';
+const COQUILLE = ['./', 'index.html', 'app.css?v=16', 'types.js?v=1', 'app.js?v=27', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(COQUILLE)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
