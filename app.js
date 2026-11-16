@@ -1,4 +1,4 @@
-/* Cahiers de Faël — appli unique (LABO, version 5, 08/11/2026 : accueil à barre unique, semaine, « J'ai fini ! » et étoiles validées, carnet de bord, cadenas parent dans les séances).
+/* Cahiers de Faël — appli unique (LABO, version 5.5, 16/11/2026 : barre d'attente IA, exercice prêt sans relecture, voix la plus naturelle ; version 5, 08/11/2026 : accueil à barre unique, semaine, « J'ai fini ! » et étoiles validées, carnet de bord, cadenas parent dans les séances).
    Une seule appli : l'espace de Faël (séances, devoirs du jour, étoiles) et l'espace parents
    (contenus saisis directement ou préparés par Mistral, devoirs, étoiles, journal, réglages, conseils).
    Les données vivent dans le « Moteur LABO » (Apps Script + tableur privé) ; rien de personnel n'est écrit dans ce fichier public. */
@@ -25,6 +25,24 @@
   const jour = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const plusJours = n => { const d = new Date(); d.setDate(d.getDate() + n); return jour(d); };
   function toast(msg, err) { const t = el('div', { class: 'toast' + (err ? ' err' : ''), role: 'status', text: msg }); document.body.append(t); setTimeout(() => t.remove(), err ? 5000 : 2400); }
+  /* Attente des opérations longues (IA) : une barre qui avance + un message qui change.
+     plein = voile sur tout l'écran (impossible de recliquer) ; sinon la barre se place sous le bouton. */
+  async function patienter(fn, o) {
+    o = o || {}; const msgs = [].concat(o.messages || 'Un instant…'), duree = (o.duree || 15) * 1000, t0 = Date.now();
+    const lib = el('span', { class: 'attente-lib', text: msgs[0] }), rempl = el('i'), temps = el('small', { class: 'attente-temps' });
+    const boite = el('div', { class: 'attente-boite', role: 'status', 'aria-live': 'polite' }, lib, el('span', { class: 'attente-barre', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100' }, rempl), temps);
+    const bloc = o.plein ? el('div', { class: 'attente-voile' }, el('div', { class: 'attente-carte' }, boite, el('p', { class: 'muted petit', text: 'Ne ferme pas l\'appli et ne reclique pas : ça arrive.' }))) : boite;
+    if (o.bouton) { o.bouton.disabled = true; o.bouton.setAttribute('aria-busy', 'true'); }
+    if (o.plein) document.body.append(bloc); else if (o.dans) o.dans.replaceChildren(bloc); else if (o.bouton) o.bouton.after(bloc);
+    const tic = setInterval(() => {
+      const e = Date.now() - t0, pc = Math.min(95, Math.round(100 * (1 - Math.exp(-e / (duree * 0.55)))));
+      rempl.style.width = pc + '%'; rempl.parentNode.setAttribute('aria-valuenow', pc);
+      lib.textContent = msgs[Math.min(msgs.length - 1, Math.floor(e / (duree / msgs.length)))];
+      temps.textContent = e > duree * 1.3 ? 'Plus long que d\'habitude, patiente encore un peu…' : Math.round(e / 1000) + ' s';
+    }, 250);
+    try { const r = await fn(); rempl.style.width = '100%'; return r; }
+    finally { clearInterval(tic); setTimeout(() => bloc.remove(), o.plein ? 150 : 0); if (o.bouton) { o.bouton.disabled = false; o.bouton.removeAttribute('aria-busy'); } }
+  }
   /* Gras des mots-clés : **mot** dans une consigne */
   function riche(txt) { return String(txt || '').split(/(\*\*[^*]+\*\*)/).map(p => /^\*\*.+\*\*$/.test(p) ? el('strong', { text: p.slice(2, -2) }) : p); }
   function surligne(texte, mots) {
@@ -40,13 +58,25 @@
   let voixListe = [];
   function chargerVoix() { try { voixListe = speechSynthesis.getVoices(); } catch (e) { voixListe = []; } }
   if ('speechSynthesis' in window) { chargerVoix(); speechSynthesis.onvoiceschanged = chargerVoix; }
+  /* Les voix « naturelles » (réseau neuronal) sonnent bien mieux que les voix de base :
+     Google sur Android, « Premium / Améliorée » sur iPhone, « Natural / Online » sur Edge. */
+  function noteVoix(v) {
+    const n = (v.name || '') + ' ' + (v.voiceURI || '');
+    return (/natural|neural|online|premium|enhanced|améliorée|amélioré|wavenet|studio/i.test(n) ? 40 : 0) + (/google/i.test(n) ? 25 : 0)
+      + (v.localService === false ? 5 : 0) - (/compact|espeak|robot|novelty|eloquence|grandma|grandpa|bad news|bells|bubbles/i.test(n) ? 50 : 0);
+  }
+  function voixDe(lang) { const l2 = lang.slice(0, 2), net = x => x.lang.replace('_', '-'); return voixListe.filter(x => x.lang && net(x).toLowerCase().startsWith(l2)).sort((a, b) => (noteVoix(b) + (net(b) === lang ? 3 : 0)) - (noteVoix(a) + (net(a) === lang ? 3 : 0))); }
+  function meilleureVoix(lang) {
+    const choisie = lang.startsWith('fr') && store.get('voixNom', '');
+    return (choisie && voixListe.find(x => x.name === choisie)) || voixDe(lang)[0] || null;
+  }
   function dire(morceaux) {
     if (!('speechSynthesis' in window) || !R().voix) return;
     speechSynthesis.cancel();
     morceaux.filter(m => m && m.texte).forEach(m => {
       const u = new SpeechSynthesisUtterance(m.texte.replace(/\*\*/g, '').replace(/_{2,}|…/g, ' blanc '));
-      u.lang = m.lang || 'fr-FR'; u.rate = m.lang && m.lang.startsWith('en') ? 0.85 : 0.9;
-      const v = voixListe.find(x => x.lang === u.lang) || voixListe.find(x => x.lang && x.lang.startsWith(u.lang.slice(0, 2)));
+      u.lang = m.lang || 'fr-FR'; u.rate = m.lang && m.lang.startsWith('en') ? 0.85 : Number(store.get('voixVitesse', 0.95)); u.pitch = 1;
+      const v = meilleureVoix(u.lang);
       if (v) u.voice = v;
       speechSynthesis.speak(u);
     });
@@ -615,13 +645,10 @@
         };
         if (k >= 4) return montrer(k % 4);
         if (liste[k]) return montrer(k);
-        bExpl.disabled = true;
-        zoneExpl.replaceChildren(el('div', { class: 'explique attente', role: 'status' }, el('p', { text: 'Je cherche une façon de t\'expliquer…' })));
         try {
-          const r2 = await api('expliquerAutrement', { contenu: c.id, consigne: String(q.consigne || '').replace(/\*\*/g, ''), question: q.enonce || '', choix: q.choix || q.etiquettes || [], bonne: q.bonne, n: k + 1, precedentes: liste.slice() });
+          const r2 = await patienter(() => api('expliquerAutrement', { contenu: c.id, consigne: String(q.consigne || '').replace(/\*\*/g, ''), question: q.enonce || '', choix: q.choix || q.etiquettes || [], bonne: q.bonne, n: k + 1, precedentes: liste.slice() }), { dans: zoneExpl, bouton: bExpl, duree: 6, messages: ['Je cherche une façon de t\'expliquer…', 'J\'y suis presque…'] });
           liste[k] = r2.texte; montrer(k);
         } catch (e) { vues[q.cle] = k; zoneExpl.replaceChildren(el('div', { class: 'aide', text: 'Pas d\'explication pour l\'instant (réseau ?). Essaie le coup de pouce.' })); }
-        bExpl.disabled = false;
       }
       function repondre(rep, bouton) {
         const juste = estJuste(q, rep);
@@ -757,8 +784,8 @@
     photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f); apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:140px;border-radius:8px' })); });
     const decouper = el('button', { class: 'btn plein', type: 'button', text: '✨ Ranger par jour avec l\'IA', disabled: !D.mistral, onclick: async () => {
       if (!texte.value.trim() && !image) return toast('Ajoute une photo ou un texte.', true);
-      decouper.disabled = true; etat.textContent = 'L\'IA lit et range les devoirs…';
-      try { const r = await api('analyserSemaine', { lundi, texte: texte.value.trim(), photoBase64: image && image.b64 }); etat.textContent = r.ajoutees + ' tâche' + (r.ajoutees > 1 ? 's ajoutées' : ' ajoutée') + '. Vérifie-les ci-dessous.'; texte.value = ''; image = null; apercu.replaceChildren(); photo.value = ''; await dessiner(); charger(); }
+      etat.textContent = '';
+      try { const r = await patienter(() => api('analyserSemaine', { lundi, texte: texte.value.trim(), photoBase64: image && image.b64 }), { plein: true, bouton: decouper, duree: image ? 25 : 15, messages: image ? ['L\'IA lit la photo de l\'agenda…', 'Elle range les devoirs par jour…', 'Presque fini…'] : ['L\'IA lit les devoirs…', 'Elle les range par jour…'] }); etat.textContent = r.ajoutees + ' tâche' + (r.ajoutees > 1 ? 's ajoutées' : ' ajoutée') + '. Vérifie-les ci-dessous.'; texte.value = ''; image = null; apercu.replaceChildren(); photo.value = ''; await dessiner(); charger(); }
       catch (e) { etat.textContent = e.message; }
       decouper.disabled = !D.mistral;
     } });
@@ -839,7 +866,7 @@
   const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
   function ecranExercices(cidChoisi) {
     const demande = prepa && prepa.demande; prepa = null;
-    pageP('Exercices', 'exercices', null,
+    pageP('Exercices', 'exercices', null, bandeauPret(),
       el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
         el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone' })), el('span', { class: 'fl', text: '›' })),
       el('h3', { text: 'Saisie directe' }),
@@ -855,16 +882,14 @@
     const rep = el('div');
     const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer', onclick: async () => {
       if (!ta.value.trim()) return ta.focus();
-      go.disabled = true; go.textContent = D.mistral ? 'L\'IA s\'en occupe…' : 'Envoi…';
       try {
-        const d = await api('demande', { texte: ta.value.trim(), contenu: sel.value });
+        const d = await patienter(async () => { const d = await api('demande', { texte: ta.value.trim(), contenu: sel.value }); if (d.statut === 'appliqué') await charger(); return d; },
+          { plein: true, bouton: go, duree: sel.value ? 25 : 8, messages: sel.value ? ['L\'IA lit ta demande…', 'Elle corrige l\'exercice…', 'Elle vérifie…'] : ['L\'IA lit ta demande…'] });
         ta.value = '';
-        if (d.statut === 'appliqué') await charger();
         rep.replaceChildren(el('div', { class: 'retour ' + (d.statut === 'appliqué' ? 'ok' : 'info') },
           el('b', { text: d.statut === 'appliqué' ? (d.type === 'reglage' ? 'Réglage appliqué' : 'Exercice corrigé') : 'Noté' }), el('span', { text: d.reponse }),
           d.statut === 'appliqué' ? el('button', { class: 'btn discret', type: 'button', text: 'Annuler ce changement', onclick: async ev => { ev.currentTarget.disabled = true; try { await api('annulerDemande', { id: d.id }); await charger(); rep.replaceChildren(el('p', { class: 'muted petit', text: 'Changement annulé.' })); } catch (e) { toast(e.message, true); } } }) : null));
       } catch (e) { toast(e.message, true); }
-      go.disabled = false; go.textContent = 'Envoyer';
     } });
     return el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
       el('h2', { text: 'Une demande, un retour ?' }),
@@ -930,10 +955,9 @@
       if (!hebdo.open || hebdo.dataset.ok) return; hebdo.dataset.ok = '1';
       const corps = el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:8px' }, el('p', { class: 'muted petit', text: 'Chargement…' })); hebdo.append(corps);
       const essai = periode => { const bt = el('button', { class: 'btn discret', type: 'button', text: periode === 'mois' ? 'Essai : bilan du mois' : 'Essai : bilan de la semaine', onclick: async () => {
-        bt.disabled = true;
-        try { await api('bilanHebdoMaintenant', { periode }); toast('Bilan envoyé : regarde ta boîte mail.'); }
+        try { await patienter(() => api('bilanHebdoMaintenant', { periode }), { bouton: bt, duree: 20, messages: ['Calcul du bilan…', 'Lecture par l\'IA…', 'Envoi du courriel…'] }); toast('Bilan envoyé : regarde ta boîte mail.'); }
         catch (e) { toast(/permission|autoris|MailApp/i.test(e.message) ? 'Envoi pas encore autorisé : lance une fois « installerBilanHebdo » dans Apps Script.' : e.message, true); }
-        bt.disabled = false; } }); return bt; };
+        } }); return bt; };
       const test = el('div', { class: 'rangee' }, essai('semaine'), essai('mois'));
       let l = [];
       try { l = await api('derniersBilans'); } catch (e) { /* hors ligne */ }
@@ -944,9 +968,8 @@
     });
     const alertes = el('div'), entrees = el('div', { class: 'liste' }, el('p', { class: 'muted petit', text: 'Chargement…' })), bilanZone = el('div');
     const bilanBtn = periode => el('button', { class: 'btn', type: 'button', text: periode === 'mois' ? 'Bilan du mois' : 'Bilan de la semaine', onclick: async ev => {
-      const b = ev.currentTarget; b.disabled = true; bilanZone.replaceChildren(el('p', { class: 'muted petit', text: D.mistral ? 'Calcul et lecture par l\'IA…' : 'Calcul…' }));
-      try { bilanZone.replaceChildren(blocBilan(await api('bilan', { periode }))); } catch (e) { bilanZone.replaceChildren(el('p', { class: 'muted petit', text: e.message })); }
-      b.disabled = false; } });
+      const b = ev.currentTarget;
+      try { const r = await patienter(() => api('bilan', { periode }), { dans: bilanZone, bouton: b, duree: D.mistral ? 15 : 4, messages: D.mistral ? ['Calcul des résultats…', 'Lecture par l\'IA…'] : ['Calcul…'] }); bilanZone.replaceChildren(blocBilan(r)); } catch (e) { bilanZone.replaceChildren(el('p', { class: 'muted petit', text: e.message })); } } });
     pageP('Carnet de bord', 'carnet', null,
       alertes,
       formCarnet(() => ecranCarnet()),
@@ -1043,6 +1066,12 @@
   };
 
   let brouillon = null; /* contenu préparé par Mistral, pas encore enregistré */
+  let pret = null; /* dernier exercice créé par l'IA : annoncé une fois sur l'écran Exercices */
+  function bandeauPret() {
+    if (!pret) return null; const p = pret; pret = null;
+    return el('div', { class: 'retour ok pret' }, el('b', { text: '✅ « ' + p.titre + ' » est prêt : Faël le voit déjà.' }),
+      el('div', { class: 'rangee' }, el('a', { class: 'btn', href: '#/essai/' + p.id, text: 'L\'essayer' }), el('a', { class: 'btn discret', href: '#/p/contenu/' + p.id, text: 'Modifier' })));
+  }
   function ecranEditeur(id, typeNouveau, opts) {
     /* opts.cible : affichage dans une fenêtre par-dessus la séance ; opts.apres : suite après enregistrement */
     const rendu = opts && opts.cible ? (t, ...k) => opts.cible.replaceChildren(el('div', { class: 'editeur-voile' }, ...k)) : page;
@@ -1138,7 +1167,7 @@
     let image = null, lecture = false;
     /* Lecture automatique de la photo : par l'IA si elle est activée, sinon sur le téléphone.
        Un petit repère discret à côté du champ texte dit qui a lu ; le téléphone sert de secours. */
-    const repere = el('span', { class: 'repere-lecture', role: 'status', hidden: true });
+    const repere = el('span', { class: 'repere-lecture', role: 'status', hidden: true }), barrePhoto = el('div');
     const secours = el('button', { class: 'btn-lien', type: 'button', hidden: true, text: 'Lire sur le téléphone à la place', onclick: () => lireLocal() });
     const marquer = (etat, txt) => { repere.hidden = false; repere.className = 'repere-lecture ' + etat; repere.textContent = txt; };
     const ajouter = t => { texte.value = (t.trim() + (texte.value.trim() ? '\n\n' + texte.value : '')).trim(); };
@@ -1150,7 +1179,7 @@
     }
     async function lireIA() {
       secours.hidden = true; lecture = true; go.disabled = true; marquer('cours', '✨ L\'IA lit la photo…');
-      try { const r = await api('lirePhoto', { photoBase64: image.b64 }); ajouter(r.texte || ''); marquer('ok', '✨ Lu par l\'IA · relis si besoin'); }
+      try { const r = await patienter(() => api('lirePhoto', { photoBase64: image.b64 }), { dans: barrePhoto, duree: 10, messages: ['L\'IA lit la photo…', 'Elle recopie le texte…'] }); ajouter(r.texte || ''); marquer('ok', '✨ Lu par l\'IA · relis si besoin'); }
       catch (e) { marquer('ko', '✨ L\'IA n\'a pas pu lire la photo.'); secours.hidden = false; }
       lecture = false; go.disabled = !ia;
     }
@@ -1161,23 +1190,25 @@
     const go = el('button', { class: 'btn plein large', type: 'button', text: 'Préparer l\'exercice avec l\'IA', disabled: !ia, onclick: async () => {
       if (lecture) return toast('Attends la fin de la lecture de la photo.', true);
       if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou prends une photo.', true);
-      go.disabled = true; go.textContent = 'L\'IA prépare le brouillon…';
       try {
-        const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
-        const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
+        const { r, c } = await patienter(async () => {
+          const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
+          const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
+          await charger(); return { r, c };
+        }, { plein: true, bouton: go, duree: 30, messages: ['L\'IA lit la leçon…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Elle range l\'exercice…', 'Presque fini…'] });
         if (lien && lien.tache) {
           const t = lien.tache; t.contenu = c.id; (t.besoins || []).forEach(b => { if (/exercice/.test(b.libelle) || (image && /photo/.test(b.libelle))) b.fait = true; });
-          try { await api('enregistrerTache', { tache: t }); } catch (e) { /* le lien se refera à la main */ }
-          await charger(); toast('Prêt et relié à la tâche « ' + t.titre + ' ».'); location.hash = lien.retour || '#/p/semaine'; return;
+          try { await api('enregistrerTache', { tache: t }); charger(); } catch (e) { /* le lien se refera à la main */ }
+          toast('Prêt et relié à la tâche « ' + t.titre + ' » : Faël le voit déjà.'); location.hash = lien.retour || '#/p/semaine'; return;
         }
-        await charger(); toast('Prêt : Faël peut le faire. Tu peux le relire ou l\'essayer.');
-        location.hash = '#/p/contenu/' + c.id;
-      } catch (e) { toast(e.message, true); go.disabled = false; go.textContent = 'Préparer l\'exercice avec l\'IA'; }
+        pret = { id: c.id, titre: r.titre || 'Exercice', modele: r.modele };
+        location.hash = '#/p/exercices';
+      } catch (e) { toast(e.message, true); }
     } });
     page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Photo ou texte', (lien && lien.retour) || '#/p/exercices'),
       ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La photo est lue sur le téléphone en attendant.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('div', { class: 'champ' }, '1. Photo de la leçon (facultatif)', boutonsPhoto(photo)), apercu,
+        el('div', { class: 'champ' }, '1. Photo de la leçon (facultatif)', boutonsPhoto(photo)), apercu, barrePhoto,
         el('label', { class: 'champ' }, el('span', { class: 'lib-lecture' }, '2. Le texte de la leçon', repere), texte, secours),
         el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
         el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
@@ -1395,11 +1426,9 @@
       m.sources ? el('span', { class: 'petit' }, 'Sources : ', String(m.sources).split('\n').filter(Boolean).map((u, k) => [k ? ' · ' : '', el('a', { href: u, target: '_blank', rel: 'noopener', text: (u.replace(/^https?:\/\/(www\.)?/, '').split('/')[0]) })])) : null);
     const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer', disabled: !D.mistral, onclick: async () => {
       const q = ta.value.trim(); if (!q) return ta.focus();
-      go.disabled = true; go.textContent = web.checked ? 'Recherche sur le web…' : 'Réflexion…';
       fil.append(bulle({ role: 'parent', texte: q }));
-      try { const r = await api('discuter', { message: q, web: web.checked, espace }); ta.value = ''; fil.append(bulle({ role: 'ia', texte: r.texte, sources: r.sources, modele: r.modele })); fil.lastChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+      try { const r = await patienter(() => api('discuter', { message: q, web: web.checked, espace }), { bouton: go, duree: web.checked ? 30 : 15, messages: web.checked ? ['Recherche sur le web…', 'Lecture des sources…', 'Rédaction de la réponse…'] : ['Réflexion…', 'Rédaction de la réponse…'] }); ta.value = ''; fil.append(bulle({ role: 'ia', texte: r.texte, sources: r.sources, modele: r.modele })); fil.lastChild.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
       catch (e) { toast(e.message, true); fil.lastChild.remove(); }
-      go.disabled = false; go.textContent = 'Envoyer';
     } });
     zone.replaceChildren(
       espace === 'carnet' ? null : el('p', { class: 'muted petit', text: 'L\'IA répond à partir de la base de connaissances de cet onglet (recherches vérifiées). Cochez « recherche web » pour qu\'elle cherche aussi en direct : la question part alors vers Perplexity (Sonar, via Mammouth), un service américain.' }),
@@ -1420,17 +1449,26 @@
     const [lV, sV] = sel('Lecture à voix haute', ['oui', 'non'], r.voix ? 'oui' : 'non'), [lC, sC] = sel('Mode calme (moins de décor)', ['oui', 'non'], r.calme ? 'oui' : 'non');
     const code = el('input', { type: 'password', inputmode: 'numeric', value: r.codeParents || '', placeholder: 'Aucun', autocomplete: 'off' });
     const resultatTest = el('div', { class: 'petit' });
+    const sVoix = el('select', { 'aria-label': 'Voix' });
+    const remplirVoix = () => { const l = voixDe('fr-FR'), ch = store.get('voixNom', '');
+      sVoix.replaceChildren(el('option', { value: '', text: 'Automatique (la plus naturelle' + (l[0] ? ' : ' + l[0].name : '') + ')' }), ...l.map(v => el('option', { value: v.name, text: v.name + (noteVoix(v) >= 25 ? ' ★' : ''), selected: v.name === ch }))); };
+    remplirVoix(); if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', remplirVoix);
+    sVoix.addEventListener('change', () => { store.set('voixNom', sVoix.value); dire([{ texte: 'Bonjour ! Choisis la bonne forme du verbe prendre.' }]); });
+    const sVit = el('select', { 'aria-label': 'Vitesse de la voix' }, [[0.85, 'Lente'], [0.95, 'Normale'], [1.05, 'Un peu rapide']].map(([v, t]) => el('option', { value: v, text: t, selected: Number(store.get('voixVitesse', 0.95)) === v })));
+    sVit.addEventListener('change', () => { store.set('voixVitesse', Number(sVit.value)); dire([{ texte: 'Voici la vitesse de lecture.' }]); });
     pageP('Réglages', 'reglages', null,
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('h2', { text: 'Mode concentration' }), el('div', { class: 'grille2' }, lT, lS), el('div', { class: 'grille2' }, lP, lD), el('div', { class: 'grille2' }, lV, lC),
+        el('label', { class: 'champ' }, 'Voix de lecture', el('span', { class: 'aide-champ', text: 'Les voix marquées ★ sont les plus naturelles. Choix gardé sur ce téléphone. Aucune ★ ? Installe une voix française « améliorée » dans les réglages du téléphone (synthèse vocale).' }), sVoix),
+        el('label', { class: 'champ' }, 'Vitesse de la voix', sVit),
         el('label', { class: 'champ' }, 'Code parents', el('span', { class: 'aide-champ', text: 'Pour que Faël n\'entre pas dans l\'espace parents. Vide = pas de code.' }), code)),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
         el('h2', { text: 'Intelligence artificielle' }),
-        el('p', { text: D.mistral ? 'Fournisseur : ' + D.ia + '. Modèles autorisés : Mistral Small, puis Mistral Medium en secours, automatiquement.' : 'Pas encore de clé dans le moteur.' }),
+        el('p', { text: D.mistral ? 'Fournisseur : ' + D.ia + '. Création et correction des exercices : le meilleur Mistral disponible (Large), cherché automatiquement. Explications et conseils : Mistral Small, plus rapide, Medium en secours.' : 'Pas encore de clé dans le moteur.' }),
         resultatTest,
-        el('button', { class: 'btn', type: 'button', text: 'Tester les capacités', onclick: async ev => { const bt = ev.currentTarget; bt.disabled = true; resultatTest.textContent = 'Test en cours (10 à 20 secondes)…';
-          try { const r = await api('testerCapacites'); resultatTest.replaceChildren(el('p', {}, el('b', { text: 'Texte : ' }), r.texte || '—'), el('p', {}, el('b', { text: 'Lecture de photo : ' }), r.vision || '—'), el('p', {}, el('b', { text: 'OCR Mistral direct : ' }), r.ocrMistral ? 'oui' : 'non (facultatif)'), r.credits ? el('p', { class: 'muted petit', text: (() => { try { const k = JSON.parse(r.credits); const i = k.info || k; const dep = Number(i.spend != null ? i.spend : k.spend); return isNaN(dep) ? 'Compte relié.' : 'Dépensé avec cette clé : ' + dep.toFixed(4) + ' $' + (i.max_budget ? ' sur un plafond de ' + i.max_budget + ' $' : ''); } catch (e) { return 'Compte relié.'; } })() }) : null); }
-          catch (e) { resultatTest.textContent = e.message; } bt.disabled = false; } })),
+        el('button', { class: 'btn', type: 'button', text: 'Tester les capacités', onclick: async ev => { const bt = ev.currentTarget;
+          try { const r = await patienter(() => api('testerCapacites'), { dans: resultatTest, bouton: bt, duree: 20, messages: ['Test du texte…', 'Recherche du meilleur modèle…', 'Test de la lecture de photo…'] }); resultatTest.replaceChildren(el('p', {}, el('b', { text: 'Texte : ' }), r.texte || '—'), el('p', {}, el('b', { text: 'Création des exercices : ' }), r.creation || '— (moteur à mettre à jour)'), el('p', {}, el('b', { text: 'Lecture de photo : ' }), r.vision || '—'), el('p', {}, el('b', { text: 'OCR Mistral direct : ' }), r.ocrMistral ? 'oui' : 'non (facultatif)'), r.credits ? el('p', { class: 'muted petit', text: (() => { try { const k = JSON.parse(r.credits); const i = k.info || k; const dep = Number(i.spend != null ? i.spend : k.spend); return isNaN(dep) ? 'Compte relié.' : 'Dépensé avec cette clé : ' + dep.toFixed(4) + ' $' + (i.max_budget ? ' sur un plafond de ' + i.max_budget + ' $' : ''); } catch (e) { return 'Compte relié.'; } })() }) : null); }
+          catch (e) { resultatTest.textContent = e.message; } } })),
       el('button', { class: 'btn plein large', type: 'button', text: 'Enregistrer', onclick: async () => {
         try { D.reglages = await api('enregistrerReglages', { reglages: { taille: Number(sT.value), series: Number(sS.value), pauses: sP.value === 'oui', dureePause: Number(sD.value), voix: sV.value === 'oui', calme: sC.value === 'oui', codeParents: code.value.trim() } }); store.set('donnees', D); toast('Enregistré.'); }
         catch (e) { toast(e.message, true); } } }),

@@ -334,3 +334,18 @@ h2{font-family:var(--f-titre); font-weight:800; font-size:1.2rem; line-height:1.
 .feuille.defi{border-radius:24px}
 .voile .feuille{border-radius:24px 24px 0 0}
 .choix .btn.juste{color:var(--paper)}
+
+/* ---------- Attente des opérations IA (16/11/2026) ---------- */
+.attente-boite{display:flex;flex-direction:column;gap:6px;padding:10px 0}
+.attente-lib{font-weight:700;color:var(--accent-fonce)}
+.attente-barre{display:block;height:12px;border-radius:999px;background:var(--relief);overflow:hidden}
+.attente-barre i{display:block;height:100%;width:3%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--accent-fonce));transition:width .25s linear;position:relative;overflow:hidden}
+.attente-barre i::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.45),transparent);animation:balayage 1.2s linear infinite}
+@keyframes balayage{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.attente-temps{color:var(--muted,#5d6680);font-size:.85rem}
+.attente-voile{position:fixed;inset:0;z-index:200;background:rgba(15,22,48,.45);display:grid;place-items:center;padding:16px}
+.attente-carte{width:min(420px,100%);background:var(--paper);border-radius:22px;padding:22px;box-shadow:0 6px 0 var(--relief)}
+.attente-carte .attente-lib{font-size:1.1rem}
+button[aria-busy=true]{opacity:.55;cursor:progress}
+.retour.pret .rangee{margin-top:8px}
+@media (prefers-reduced-motion:reduce){.attente-barre i::after{animation:none}.attente-barre i{transition:none}}
