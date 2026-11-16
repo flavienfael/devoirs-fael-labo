@@ -195,6 +195,9 @@
           choix: melange([p.fr, ...autresFr]), bonne: p.fr,
           aide: 'Réécoute le mot doucement et pense à la leçon : quand l\'as-tu entendu ?', explication: '« ' + p.en + ' » veut dire ' + p.fr + '.' });
       });
+    } else if (!TYPES[c.type] && CFT()[c.type]) {
+      try { return (CFT()[c.type].questions(d, outilsTypes()) || []).filter(q => q && q.cle && q.mode); }
+      catch (e) { console.error('Format ' + c.type, e); return []; }
     } else if (c.type === 'qcm') {
       (d.questions || []).forEach((q, i) => {
         const choix = (q.choix || []).filter(Boolean); if (choix.length < 2) return;
@@ -205,11 +208,12 @@
     }
     return out;
   }
-  const estJuste = (q, rep) => rep === q.bonne;
+  const estJuste = (q, rep) => typeof q.juste === 'function' ? !!q.juste(rep) : rep === q.bonne;
 
   /* Défi de fin de séance : 2 ou 3 questions bien plus difficiles, sans aide, +2 étoiles chacune */
   function defis(c) {
     const d = c.donnees || {}, out = [];
+    if (!TYPES[c.type]) { try { const f = CFT()[c.type] && CFT()[c.type].defis; return f ? (f(d, outilsTypes()) || []).map((q, i) => Object.assign({ defi: true }, q, { cle: 'd:' + (q.cle || i), aide: '' })) : []; } catch (e) { return []; } }
     if (c.type === 'qcm') {
       (d.defis && d.defis.length ? d.defis : (d.questions || []).slice(-3)).forEach((q, i) => {
         const choix = (q.choix || []).filter(Boolean); if (choix.length < 2) return;
@@ -262,6 +266,13 @@
   }
   const badgeEtoiles = () => el('span', { class: 'etoiles', 'aria-label': (D ? D.etoiles || 0 : 0) + ' étoiles' + (D && D.attente ? ', ' + D.attente + ' à valider' : '') }, el('b', { text: '★' }), String(D ? D.etoiles || 0 : 0), D && D.attente ? el('small', { class: 'attente', text: '+' + D.attente }) : null);
   const ICONES = { mots: '✏️', conjugaison: '🔤', vocabulaire: '🇬🇧', qcm: '✅' };
+  /* Formats ajoutés par Claude (types.js) : actifs seulement s'ils sont déclarés dans l'onglet Types (essai ou adopté) */
+  const CFT = () => window.CF_TYPES || {};
+  const typesPlus = () => (D && D.types || []).filter(t => t.statut !== 'abandonné' && CFT()[t.type]);
+  const plus = t => typesPlus().find(x => x.type === t) || null;
+  const nomType = t => TYPES[t] || (CFT()[t] && CFT()[t].nom) || (plus(t) && plus(t).nom) || '';
+  const iconeType = t => ICONES[t] || (CFT()[t] && CFT()[t].icone) || '📘';
+  const outilsTypes = () => ({ el, dire, melange, norm, riche });
   const TYPES = { mots: 'Mots de dictée', conjugaison: 'Conjugaison', vocabulaire: 'Vocabulaire', qcm: 'Questions' };
   const MATIERES = ['Français', 'Mathématiques', 'Anglais', 'Questionner le monde'];
   const contenus = statut => (D ? D.contenus : []).filter(c => !statut || c.statut === statut);
@@ -312,15 +323,15 @@
     const mats = MATIERES.filter(m => valides.some(c => c.matiere === m)).concat([...new Set(valides.map(c => c.matiere))].filter(m => !MATIERES.includes(m)));
     const tuile = (c, mots) => {
       const a = el('a', { class: 'tuile', href: '#/seance/' + c.id },
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[c.type] || '📘' }),
-        el('span', {}, el('span', { class: 't' }, surligne(c.titre, mots)), el('span', { class: 's', text: TYPES[c.type] || '' })),
+        el('span', { class: 'ic', 'aria-hidden': 'true', text: iconeType(c.type) }),
+        el('span', {}, el('span', { class: 't' }, surligne(c.titre, mots)), el('span', { class: 's', text: nomType(c.type) })),
         el('span', { class: 'fl', text: '›' }));
       return parentOk ? el('div', { class: 'ligne-tuile' }, a, el('a', { class: 'rond', href: '#/p/contenu/' + c.id, 'aria-label': 'Modifier ' + c.titre, text: '✎' })) : a;
     };
     function dessiner() {
       chips.replaceChildren(...['Tout', ...mats].map(m => el('button', { type: 'button', 'aria-pressed': String((m === 'Tout' ? '' : m) === filtre.matiere), text: m, onclick: () => { filtre.matiere = m === 'Tout' ? '' : m; dessiner(); } })));
       const mots = norm(filtre.q).split(/\s+/).filter(Boolean);
-      const ok = c => (!filtre.matiere || c.matiere === filtre.matiere) && mots.every(m => norm([c.titre, c.matiere, c.theme, TYPES[c.type]].join(' ')).includes(m));
+      const ok = c => (!filtre.matiere || c.matiere === filtre.matiere) && mots.every(m => norm([c.titre, c.matiere, c.theme, nomType(c.type)].join(' ')).includes(m));
       const blocs = [];
       mats.forEach(m => {
         const dans = valides.filter(c => c.matiere === m && ok(c)); if (!dans.length) return;
@@ -445,7 +456,7 @@
   const ONGLETS_P = [['semaine', '📅', 'Semaine'], ['exercices', '✏️', 'Exercices'], ['etoiles', '⭐', 'Étoiles'], ['carnet', '📓', 'Carnet'], ['conseils', '💬', 'Conseils'], ['reglages', '⚙️', 'Réglages']];
   function navParents(actif) {
     return el('nav', { class: 'onglets', 'aria-label': 'Espace parents' }, ONGLETS_P.map(([k, ic, lib]) => el('a', { href: '#/p/' + k, 'aria-current': k === actif ? 'page' : null },
-      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : null)));
+      el('span', { 'aria-hidden': 'true', text: ic }), el('small', { text: lib }), k === 'etoiles' && D && (D.attente || (D.choix || []).length) ? el('i', { class: 'pastille', 'aria-label': 'étoiles à valider' }) : k === 'exercices' && D && formatsAEvaluer() ? el('i', { class: 'pastille', 'aria-label': 'nouveau format à évaluer' }) : null)));
   }
   const moteurAJour = () => !!(D && Array.isArray(D.taches));
 
@@ -473,7 +484,9 @@
       comment: ['« À partir d\'une photo ou d\'un texte » : photographiez la leçon ; l\'IA la lit, puis prépare l\'exercice. Il est disponible tout de suite.',
         'Saisie directe : mots de dictée, conjugaison, vocabulaire anglais ou questions à choix, que vous tapez vous-même.',
         '« Une demande, un retour ? » : écrivez ce qui ne va pas (« trop dur », « moins de questions »…). L\'IA applique tout de suite ce qui relève des réglages ou corrige l\'exercice choisi ; c\'est annulable.',
-        'Pour modifier un exercice : barre de recherche de l\'accueil en mode parent (crayon à côté), ou le cadenas pendant une séance.'],
+        'Pour modifier un exercice : barre de recherche de l\'accueil en mode parent (crayon à côté), ou le cadenas pendant une séance.',
+        '🧪 Nouveaux formats : trois fois par semaine, Claude regarde vos demandes, les exercices et les avis de Faël. S\'il manque une façon de travailler (relier, classer…), il ajoute un format « en essai ». Il apparaît en haut de cet écran avec ses questions : notez de 1 à 5 si ça marche avec Faël et répondez. Claude décide ensuite avec vous : on garde, on ajuste ou on abandonne.',
+        '⭐ Avis de Faël : de temps en temps (toujours après un format en essai, sinon une séance sur trois, une fois par jour au plus), le bilan lui demande s\'il a aimé, d\'une seule touche. Ses avis sont résumés ici.'],
       fael: 'Faël ne tape jamais de mot : il répond en choisissant. L\'écriture se fait sur papier.',
       astuce: 'Chaque modification garde l\'ancienne version : « Versions précédentes » dans l\'exercice permet de revenir en arrière.' },
     etoiles: { titre: 'Étoiles et récompenses', icone: '⭐',
@@ -687,6 +700,11 @@
         dessinerOrdre();
         zoneRep.replaceChildren(ligne, tas);
       }
+      const modePlus = window.CF_MODES && window.CF_MODES[q.mode];
+      if (modePlus) {
+        try { modePlus(q, Object.assign(outilsTypes(), { zone: zoneRep, repondre: (v, b) => repondre(v, b || null) })); }
+        catch (e) { console.error(e); zoneRep.replaceChildren(el('div', { class: 'retour info' }, el('span', { text: 'Cette question ne s\'affiche pas bien. On passe à la suivante.' }), el('button', { class: 'btn plein large', type: 'button', text: 'Continuer', onclick: () => suivant() }))); }
+      }
       if (q.mode === 'choix') {
         zoneRep.replaceChildren(el('div', { class: 'choix' + (q.choix.some(x => x.length > 22) ? ' un' : '') },
           q.choix.map(ch => el('button', { class: 'btn', type: 'button', 'data-v': ch, text: ch, onclick: e => { if (q.direChoix) dire([{ texte: ch, lang: q.direChoix }]); repondre(ch, e.currentTarget); } }))));
@@ -741,7 +759,7 @@
       const total = series.filter(l => !l[0].defi).reduce((s, l) => s + l.length, 0);
       const bonus = test ? 0 : 2; const gagne = etat.etoiles + etat.etoilesDefi + bonus;
       const phrase = premiers === total ? 'Tout juste ! Tu as été très concentré.' :
-        'Tu as trouvé ' + premiers + ' réponses sur ' + total + '. Les autres reviendront pour t\'entraîner.';
+        'Tu as trouvé ' + premiers + ' réponse' + (premiers > 1 ? 's' : '') + ' sur ' + total + '. Les autres reviendront pour t\'entraîner.';
       if (!test) envoyer({ resultats: j.map(x => Object.assign({ horodatage: new Date().toISOString().slice(0, 19).replace('T', ' ') }, x)), etoiles: gagne, motif: 'Séance : ' + c.titre })
         .then(() => { const b = $('.etoiles'); if (b && D) b.replaceWith(badgeEtoiles()); });
       if (D && !test) { D.attente = (D.attente || 0) + gagne; store.set('donnees', D); }
@@ -750,9 +768,10 @@
         el('p', { text: phrase }),
         jd.length ? el('p', { class: 'defi-bilan', text: '🏆 Défi : ' + jd.filter(x => x.juste).length + ' sur ' + jd.length + (etat.etoilesDefi ? ' · +' + etat.etoilesDefi + ' étoiles' : ' · bravo d\'avoir essayé') }) : null,
         bonus ? el('p', { class: 'muted petit', text: 'Dont 2 étoiles bonus pour avoir fini la séance.' }) : el('p', { class: 'muted petit', text: 'Mode essai : rien n\'est enregistré.' }),
+        test ? null : carteAvisFael(c),
         test ? el('a', { class: 'btn plein large', href: retour, text: 'Retour au contenu' }) : el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }),
         test ? null : el('a', { class: 'btn large', href: '#/', text: 'J\'ai encore des devoirs à faire ici' })));
-      dire([{ texte: 'Séance terminée. ' + phrase }]);
+      dire([{ texte: 'Séance terminée. ' + phrase }].concat(document.querySelector('.avis-fael') ? [{ texte: 'Tu as aimé cet exercice ? Touche les étoiles.' }] : []));
     }
 
     lecon();
@@ -866,7 +885,7 @@
   const AIDES_TYPES = { mots: 'Liste de mots de dictée', conjugaison: 'Un verbe, un temps, ses formes', vocabulaire: 'Mots en français et en anglais', qcm: 'Questions à choix, sur n\'importe quelle leçon' };
   function ecranExercices(cidChoisi) {
     const demande = prepa && prepa.demande; prepa = null;
-    pageP('Exercices', 'exercices', null, bandeauPret(),
+    pageP('Exercices', 'exercices', null, bandeauPret(), blocFormatsEssai(),
       el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
         el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone' })), el('span', { class: 'fl', text: '›' })),
       el('h3', { text: 'Saisie directe' }),
@@ -1077,6 +1096,18 @@
     const rendu = opts && opts.cible ? (t, ...k) => opts.cible.replaceChildren(el('div', { class: 'editeur-voile' }, ...k)) : page;
     const c = id ? contenu(id) : (brouillon && brouillon.type === typeNouveau ? brouillon : { type: typeNouveau, matiere: 'Français', theme: '', titre: '', donnees: {}, statut: 'à valider', source: 'saisie directe' });
     if (!c) { rendu(tete('Exercice', '#/'), el('p', { class: 'vide', text: 'Introuvable.' })); return; }
+    if (!TYPES[c.type]) { /* format ajouté par Claude : il se corrige par un retour à l'IA, pas à la main */
+      rendu(tete(c.titre || 'Exercice', '#/p/exercices'),
+        el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
+          el('p', { class: 'muted petit', text: '🧪 ' + nomType(c.type) + ' · ' + (c.source || '') }),
+          el('p', { text: 'Ce format a été ajouté par Claude. Pour changer l\'exercice, donne un retour à l\'IA : elle le corrige et garde l\'ancienne version.' })),
+        el('div', { class: 'rangee' }, el('a', { class: 'btn', href: '#/essai/' + c.id, text: 'Essayer' }), el('a', { class: 'btn plein', href: '#/p/retour/' + c.id, text: 'Donner un retour à l\'IA' })),
+        id ? blocVersions(c.id) : null,
+        el('button', { class: 'btn discret large', type: 'button', text: 'Archiver (Faël ne le verra plus)', onclick: async () => {
+          if (!confirm('Archiver cet exercice ?')) return;
+          try { await api('statutContenu', { id: c.id, statut: 'archivé' }); await charger(); location.hash = '#/'; } catch (e) { toast(e.message, true); } } }));
+      return;
+    }
     const d = c.donnees || {}, ty = c.type;
     const titre = el('input', { value: c.titre || '', placeholder: 'Ex. : Dictée du 9 novembre' });
     const matiere = el('select', {}, [...new Set([...MATIERES, c.matiere].filter(Boolean))].map(m => el('option', { value: m, text: m, selected: m === c.matiere })));
@@ -1111,7 +1142,7 @@
     }
     rendu(tete(id ? 'Modifier' : 'Nouvel exercice', id ? '#/' : '#/p/exercices'),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('p', { class: 'muted petit', text: TYPES[ty] + ' · ' + (c.source || '') }),
+        el('p', { class: 'muted petit', text: nomType(ty) + ' · ' + (c.source || '') }),
         el('label', { class: 'champ' }, 'Titre', titre),
         el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Matière', matiere), el('label', { class: 'champ' }, 'Thème', theme, dl)),
         corps,
@@ -1158,7 +1189,8 @@
   function ecranGenerer() {
     const lien = prepa; prepa = null;
     const ia = D.mistral, nomIA = D.ia ? 'l\'IA (Mistral via ' + D.ia + ')' : 'l\'IA';
-    const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })));
+    const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })),
+      typesPlus().map(t => el('option', { value: t.type, text: '🧪 ' + (t.nom || nomType(t.type)) + (t.statut === 'essai' ? ' (nouveau format, en essai)' : '') })));
     const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou prends une photo : le texte s\'écrit ici tout seul.' });
     if (lien && lien.texte) texte.value = lien.texte;
     const precision = el('input', { placeholder: 'Ex. : seulement les mots en bleu ; 10 questions faciles' });
@@ -1327,6 +1359,69 @@
             try { const h = await api('historiqueEtoiles'); box.replaceChildren(...(h.length ? h.slice(0, 60).map(x => el('p', { class: 'petit' }, el('b', { text: (Number(x.delta) > 0 ? '+' : '') + x.delta + ' ' }), x.motif, el('span', { class: 'muted', text: ' · ' + String(x.horodatage).slice(0, 16).replace('T', ' ') }))) : [el('p', { class: 'muted petit', text: 'Rien pour l\'instant.' })])); }
             catch (e) { toast('Historique indisponible hors ligne.', true); } } }))))].filter(Boolean));
   }
+
+  /* ---------- Avis de Faël : pas à chaque fois, mais régulièrement ----------
+     Toujours la première fois qu'il fait un format en essai ; sinon une séance sur trois, au plus une fois par jour.
+     Une touche suffit (1 à 3 étoiles) ; « C'était… » est facultatif. Aucune étoile gagnée : l'avis reste sincère. */
+  function avisAttendu(c) {
+    const p = plus(c.type), deja = (store.get('avisVus', [])).includes(c.id);
+    if (p && p.statut === 'essai' && !deja) return true;
+    const n = Number(store.get('avisCompteur', 0)) + 1; store.set('avisCompteur', n);
+    const auj = new Date().toISOString().slice(0, 10);
+    if (store.get('avisJour', '') === auj || (D && D.avis && D.avis.faelAujourdhui)) return false;
+    return n >= 3;
+  }
+  function carteAvisFael(c) {
+    if (!avisAttendu(c)) return null;
+    let id = null, note = 0;
+    const merci = el('p', { class: 'avis-merci', 'aria-live': 'polite' });
+    const envoyerAvis = async ressenti => {
+      try { const r = await api('donnerAvis', { avis: { id, auteur: 'faël', type: c.type, contenu: c.id, titre: c.titre, note, ressenti } }); id = r.id; }
+      catch (e) { /* hors ligne : tant pis, ce n'est qu'un avis */ }
+    };
+    const etoiles = el('div', { class: 'avis-etoiles', role: 'group', 'aria-label': 'Tu as aimé ?' }, [1, 2, 3].map(n => el('button', { type: 'button', class: 'avis-etoile', 'aria-label': n + ' étoile' + (n > 1 ? 's' : ''), text: '★', onclick: () => {
+      note = n; etoiles.querySelectorAll('button').forEach((b, k) => b.classList.toggle('pleine', k < n));
+      store.set('avisJour', new Date().toISOString().slice(0, 10)); store.set('avisCompteur', 0); store.set('avisVus', [...store.get('avisVus', []), c.id].slice(-200));
+      const mots = ['Pas trop…', 'Un peu', 'J\'ai adoré !'][n - 1]; merci.textContent = mots + ' Merci !'; dire([{ texte: mots + ' Merci ! C\'était trop facile, bien, ou trop dur ?' }]);
+      ressentis.hidden = false; envoyerAvis('');
+    } })));
+    const ressentis = el('div', { class: 'avis-ressentis', hidden: true }, [['facile', '😴', 'Trop facile'], ['bien', '🙂', 'Juste bien'], ['dur', '🥵', 'Trop dur']].map(([v, e, t]) => el('button', { type: 'button', class: 'btn', onclick: ev => {
+      ressentis.querySelectorAll('button').forEach(b => b.classList.remove('choisi')); ev.currentTarget.classList.add('choisi'); merci.textContent = 'C\'est noté, merci !'; envoyerAvis(v);
+    } }, el('span', { class: 'avis-emoji', 'aria-hidden': 'true', text: e }), t)));
+    return el('div', { class: 'avis-fael' }, el('b', { text: 'Tu as aimé cet exercice ?' }), etoiles, merci, ressentis);
+  }
+
+  /* ---------- Nouveaux formats : évaluation par les parents (Claude lit les réponses à son passage suivant) ---------- */
+  function blocFormatsEssai() {
+    const l = typesPlus().filter(t => t.statut === 'essai');
+    const av = (D && D.avis) || {}, faits = t => (D.contenus || []).filter(c => c.type === t).length;
+    const resumeFael = Object.entries(av.contenus || {}).sort((a, b) => b[1].moyenne - a[1].moyenne);
+    if (!l.length && !resumeFael.length) return null;
+    return el('div', { style: 'display:flex;flex-direction:column;gap:12px' },
+      l.map(t => {
+        const f = (av.types || {})[t.type], dejaParent = (av.parents || []).filter(p => p.type === t.type && String(p.horodatage) >= String(t.modifie || ''));
+        const notes = el('div', { class: 'avis-etoiles parent', role: 'group', 'aria-label': 'Ça marche avec Faël ?' }); let note = 0;
+        [1, 2, 3, 4, 5].forEach(n => notes.append(el('button', { type: 'button', class: 'avis-etoile', 'aria-label': n + ' sur 5', text: '★', onclick: () => { note = n; notes.querySelectorAll('button').forEach((b, k) => b.classList.toggle('pleine', k < n)); } })));
+        const ta = el('textarea', { style: 'min-height:80px', placeholder: 'Ce que vous avez vu : a-t-il compris le geste ? Trop long ? Il en redemande ?…' });
+        const go = el('button', { class: 'btn plein', type: 'button', text: 'Envoyer à Claude', onclick: async () => {
+          if (!note) return toast('Choisis d\'abord une note de 1 à 5.', true);
+          try { await patienter(() => api('donnerAvis', { avis: { auteur: 'parent', type: t.type, note, texte: ta.value.trim() } }), { bouton: go, duree: 3, messages: ['Envoi…'] }); await charger(); toast('Merci : Claude le lira à son prochain passage.'); ecranExercices(); }
+          catch (e) { toast(e.message, true); } } });
+        return el('section', { class: 'carte essai-format' },
+          el('div', { class: 'tache-tete' }, el('b', { text: '🧪 ' + (t.nom || t.type) }), el('span', { class: 'badge av', text: 'en essai' })),
+          t.description ? el('p', { class: 'petit', text: t.description }) : null,
+          el('p', { class: 'muted petit', text: faits(t.type) + ' exercice' + (faits(t.type) > 1 ? 's' : '') + ' dans ce format' + (f ? ' · avis de Faël : ' + f.moyenne + '/3 sur ' + f.n + (f.dur ? ' · « trop dur » ×' + f.dur : '') + (f.facile ? ' · « trop facile » ×' + f.facile : '') : ' · pas encore d\'avis de Faël') }),
+          t.reponseClaude ? el('div', { class: 'retour info' }, el('b', { class: 'petit', text: 'Claude :' }), el('span', { style: 'white-space:pre-wrap', text: t.reponseClaude })) : null,
+          t.questions ? el('div', { class: 'questions-claude' }, el('b', { class: 'petit', text: 'Les questions de Claude' }), el('ul', {}, String(t.questions).split(/\n+/).filter(Boolean).map(q => el('li', { text: q.replace(/^[-•]\s*/, '') })))) : null,
+          dejaParent.length ? el('p', { class: 'muted petit', text: '✓ Votre avis : ' + dejaParent.map(p => p.note + '/5').join(', ') + '. Vous pouvez en ajouter un autre.' }) : null,
+          el('label', { class: 'champ' }, 'Ça marche avec Faël ?', notes), el('label', { class: 'champ' }, 'Vos réponses, vos remarques', ta), go);
+      }),
+      resumeFael.length ? el('details', { class: 'carte' }, el('summary', { class: 'sommaire', text: '⭐ Ce que Faël a pensé de ses exercices (30 jours)' }),
+        el('div', { class: 'liste', style: 'margin-top:8px' }, resumeFael.slice(0, 12).map(([cid, o]) => el('div', { class: 'ligne-avis' },
+          el('span', { class: 'avis-mini', text: '★'.repeat(Math.round(o.moyenne)) + '☆'.repeat(3 - Math.round(o.moyenne)) }), el('span', { text: o.titre || cid }),
+          el('small', { class: 'muted', text: o.n + ' avis' + (o.dur ? ' · trop dur ×' + o.dur : '') + (o.facile ? ' · trop facile ×' + o.facile : '') }))))) : null);
+  }
+  const formatsAEvaluer = () => typesPlus().filter(t => t.statut === 'essai' && !((D.avis || {}).parents || []).some(p => p.type === t.type && String(p.horodatage) >= String(t.modifie || ''))).length;
 
   /* ---------- Ma tirelire (Faël) ---------- */
   function carteTirelire() {

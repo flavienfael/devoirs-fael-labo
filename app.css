@@ -349,3 +349,20 @@ h2{font-family:var(--f-titre); font-weight:800; font-size:1.2rem; line-height:1.
 button[aria-busy=true]{opacity:.55;cursor:progress}
 .retour.pret .rangee{margin-top:8px}
 @media (prefers-reduced-motion:reduce){.attente-barre i::after{animation:none}.attente-barre i{transition:none}}
+
+/* ---------- Avis de Faël et formats en essai (16/11/2026) ---------- */
+.avis-fael{display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;border-radius:18px;background:var(--desk);margin:6px 0}
+.avis-fael>b{font-family:'Baloo 2',sans-serif;font-size:1.25rem}
+.avis-etoiles{display:flex;gap:10px;justify-content:center}
+.avis-etoile{width:64px;height:64px;border-radius:18px;border:0;background:var(--paper);box-shadow:0 4px 0 var(--relief);font-size:2.4rem;line-height:1;color:var(--relief);cursor:pointer}
+.avis-etoile.pleine{color:var(--star-vif);background:#fff7dc}
+.avis-etoiles.parent .avis-etoile{width:48px;height:48px;font-size:1.7rem}
+.avis-merci{margin:0;font-weight:700;min-height:1.4em}
+.avis-ressentis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;width:100%}
+.avis-ressentis .btn{display:flex;flex-direction:column;align-items:center;gap:2px;min-height:72px;font-size:.9rem;padding:6px}
+.avis-ressentis .btn.choisi{outline:3px solid var(--accent)}
+.avis-emoji{font-size:1.6rem}
+.essai-format{display:flex;flex-direction:column;gap:10px;border:2px dashed var(--accent)}
+.questions-claude ul{margin:4px 0 0;padding-left:20px}
+.ligne-avis{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.avis-mini{color:var(--star);letter-spacing:1px}
