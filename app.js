@@ -83,7 +83,20 @@
   }
 
   /* ---------- Moteur (Apps Script) ---------- */
-  let D = store.get('donnees', null);
+  /* Mistral emballe parfois ses données dans une enveloppe en trop ({"qcm":{"questions":…}}, {"mots":{"mots":…}},
+     défis rangés en {"questions":[…]}) : l'exercice s'ouvrait alors sans aucune question. On déballe à la lecture. */
+  function deballer(type, d) {
+    d = d && typeof d === 'object' ? d : {};
+    for (let k = 0; k < 2; k++) {
+      const env = d[type] || (type === 'qcm' && d.qcm) || null;
+      if (env && typeof env === 'object' && !Array.isArray(env)) d = Object.assign({}, env, d.retiens && !env.retiens ? { retiens: d.retiens } : {}, d.defis && !env.defis ? { defis: d.defis } : {});
+    }
+    if (d.defis && !Array.isArray(d.defis)) d = Object.assign({}, d, { defis: Array.isArray(d.defis.questions) ? d.defis.questions : [] });
+    if (d.retiens && !Array.isArray(d.retiens)) d = Object.assign({}, d, { retiens: [] });
+    return d;
+  }
+  function normaliser(x) { if (x && Array.isArray(x.contenus)) x.contenus.forEach(c => { c.donnees = deballer(c.type, c.donnees); }); return x; }
+  let D = normaliser(store.get('donnees', null));
   const R = () => Object.assign({ taille: 5, series: 2, pauses: true, dureePause: 45, voix: true, calme: true, codeParents: '' }, (D && D.reglages) || {});
   async function api(action, args) {
     const cfg = store.get('cfg', null);
@@ -95,7 +108,7 @@
     return j.resultat;
   }
   async function charger() {
-    try { D = await api('demarrer'); store.set('donnees', D); await viderFile(); return true; }
+    try { D = normaliser(await api('demarrer')); store.set('donnees', D); await viderFile(); return true; }
     catch (e) { if (!D) throw e; toast('Hors ligne : je travaille avec la dernière copie.', true); return false; }
   }
   /* File d'attente des résultats (si le réseau manque) */
@@ -1277,7 +1290,7 @@
       if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou prends une photo.', true);
       try {
         const { r, c } = await patienter(async () => {
-          const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() });
+          const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() }); r.donnees = deballer(r.type, r.donnees);
           const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
           await charger(); return { r, c };
         }, { plein: true, bouton: go, duree: 30, messages: ['L\'IA lit la leçon…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Elle range l\'exercice…', 'Presque fini…'] });
