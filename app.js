@@ -328,64 +328,149 @@
   /* ---------- Espace de Faël ---------- */
   let filtre = { q: '', matiere: '' };
   let prepa = null; /* ce que la barre de recherche transmet à un écran parent (texte, tâche…) */
-  function ecranAccueil() {
-    const valides = contenus();
-    const q = el('input', { type: 'search', placeholder: parentOk ? 'Chercher un exercice, ou taper un texte…' : 'Chercher : dictée, conjugaison, anglais…', 'aria-label': 'Chercher', value: filtre.q, autocomplete: 'off', enterkeyhint: 'search' });
+  /* ---------- Rangement : matière › notion (liste fermée) › mois › semaine ---------- */
+  const NOTIONS_DEF = { 'Français': ['Conjugaison', 'Grammaire', 'Orthographe', 'Dictée', 'Vocabulaire', 'Lecture', 'Poésie'], 'Mathématiques': ['Nombres', 'Calcul', 'Problèmes', 'Géométrie', 'Mesures'], 'Anglais': ['Vocabulaire', 'Phrases'], 'Questionner le monde': ['Le temps', 'L\'espace', 'Le vivant', 'La matière'] };
+  const notionsDe = m => ((D && D.notions) || NOTIONS_DEF)[m] || [];
+  const COUL_MAT = { 'Français': '#2747c9', 'Mathématiques': '#13804a', 'Anglais': '#c62828', 'Questionner le monde': '#d9730d' };
+  const ICO_MAT = { 'Français': '📘', 'Mathématiques': '🔢', 'Anglais': '🇬🇧', 'Questionner le monde': '🌍' };
+  const INDICES = [['Conjugaison', /conjug|verbe|present|futur|imparfait|passe/], ['Dictée', /dictee|mots a apprendre/], ['Orthographe', /orthograph|accent|lettre|homophone/], ['Grammaire', /gramma|accord|adjectif|sujet|determinant|groupe nominal|pronom/], ['Vocabulaire', /vocab|mot|school|famille|synonyme|contraire/], ['Lecture', /lecture|texte|compren/], ['Poésie', /poesie|poeme/], ['Nombres', /nombre|numer|dizaine|centaine/], ['Calcul', /calcul|addition|soustraction|multipli|division|table/], ['Problèmes', /probleme/], ['Géométrie', /geometr|figure|angle|carre|rectangle|triangle|cercle/], ['Mesures', /mesure|longueur|masse|duree|heure|monnaie|metre|gramme|litre/], ['Phrases', /phrase|sentence/], ['Le temps', /temps|siecle|histoire|calendrier/], ['L\'espace', /espace|carte|plan|paysage/], ['Le vivant', /vivant|animal|plante|corps/], ['La matière', /matiere|eau|etat/]];
+  function notionDe(c) {
+    const l = notionsDe(c.matiere), t = norm(c.theme || '');
+    const ex = l.find(n => norm(n) === t); if (ex) return ex;
+    const h = INDICES.find(([n, re]) => l.includes(n) && re.test(t + ' ' + norm(c.titre || ''))); return h ? h[0] : 'Autres';
+  }
+  /* Date de l'exercice : celle du devoir s'il est relié à la semaine, sinon sa création */
+  function dateDe(c) {
+    const t = (D.taches || []).find(x => String(x.contenu) === String(c.id));
+    if (t && t.jour) return { j: t.jour, pour: true };
+    const j = String(c.cree || c.modifie || '').slice(0, 10); return { j: /^\d{4}-\d\d-\d\d$/.test(j) ? j : '', pour: false };
+  }
+  const MOIS_C = ['janv.', 'févr.', 'mars', 'avril', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+  const jourCourt = j => { const d = dateJ(j); return JOURS[d.getDay()] + ' ' + d.getDate() + ' ' + MOIS_C[d.getMonth()]; };
+  /* État : nouveau, fait, à revoir, je sais — d'après le moteur (toutes les tablettes) et ce téléphone */
+  const ETATS = { nouveau: ['🆕', 'Nouveau', 'e-new'], fait: ['✓', 'Fait', 'e-fait'], revoir: ['🔁', 'À revoir', 'e-revoir'], su: ['⭐', 'Je sais', 'e-su'] };
+  function infoDe(c) {
+    const s1 = (D.etats || {})[c.id], s2 = store.get('faits', {})[c.id];
+    return [s1, s2].filter(Boolean).sort((a, b) => String(b.derniere).localeCompare(String(a.derniere)))[0] || null;
+  }
+  function etatDe(c) {
+    const i = infoDe(c);
+    if (!i) return 'nouveau';
+    if (erreursDues(c.id).length || (i.taux != null && i.taux < 70)) return 'revoir';
+    if (i.seances >= 2 && i.taux >= 90 && (i.tauxAvant == null || i.tauxAvant >= 80)) return 'su';
+    return 'fait';
+  }
+  function noterSeance(cid, taux) {
+    const f = store.get('faits', {}), a = f[cid] || { seances: 0 };
+    f[cid] = { derniere: jour(), taux, tauxAvant: a.taux != null ? a.taux : null, seances: (a.seances || 0) + (a.derniere === jour() ? 0 : 1) };
+    store.set('faits', f);
+  }
+  const badgeEtat = c => { const e = ETATS[etatDe(c)]; return el('span', { class: 'etat ' + e[2], 'aria-label': e[1] }, e[0] + (e[0] === '✓' || e[0] === '🆕' ? '' : '')); };
+  function ligneExo(c, opts) {
+    const dt = dateDe(c), sous = [(opts && opts.notion) ? notionDe(c) : null, dt.j ? (dt.pour ? 'pour ' : '') + jourCourt(dt.j) : null, nomType(c.type)].filter(Boolean).join(' · ');
+    const a = el('a', { class: 'ex', href: '#/seance/' + c.id }, el('span', { class: 'ic', 'aria-hidden': 'true', text: iconeType(c.type) }),
+      el('span', { class: 'ex-txt' }, el('b', {}, opts && opts.mots ? surligne(c.titre, opts.mots) : c.titre), el('small', { text: sous })), badgeEtat(c));
+    return parentOk ? el('div', { class: 'ligne-tuile' }, a, el('a', { class: 'rond', href: '#/p/contenu/' + c.id, 'aria-label': 'Modifier ' + c.titre, text: '✎' })) : a;
+  }
+  /* Barre de recherche (surtout pour les parents) : résultats à plat, plus les actions parent */
+  function barreRecherche(zone, apresVide) {
+    const q = el('input', { type: 'search', placeholder: parentOk ? 'Chercher un exercice, ou taper un texte…' : 'Chercher un exercice…', 'aria-label': 'Chercher', value: filtre.q, autocomplete: 'off', enterkeyhint: 'search' });
     const x = el('button', { class: 'x', type: 'button', 'aria-label': 'Effacer', text: '✕', hidden: !filtre.q });
-    const liste = el('div', { class: 'liste' }), chips = el('div', { class: 'chips' }), actions = el('div');
-    const mats = MATIERES.filter(m => valides.some(c => c.matiere === m)).concat([...new Set(valides.map(c => c.matiere))].filter(m => !MATIERES.includes(m)));
-    const tuile = (c, mots) => {
-      const a = el('a', { class: 'tuile', href: '#/seance/' + c.id },
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: iconeType(c.type) }),
-        el('span', {}, el('span', { class: 't' }, surligne(c.titre, mots)), el('span', { class: 's', text: nomType(c.type) })),
-        el('span', { class: 'fl', text: '›' }));
-      return parentOk ? el('div', { class: 'ligne-tuile' }, a, el('a', { class: 'rond', href: '#/p/contenu/' + c.id, 'aria-label': 'Modifier ' + c.titre, text: '✎' })) : a;
+    const dessiner = () => {
+      const t = filtre.q.trim(), mots = norm(t).split(/\s+/).filter(Boolean);
+      if (!mots.length) { zone.hidden = true; apresVide && apresVide(false); return; }
+      const res = contenus().filter(c => mots.every(m => norm([c.titre, c.matiere, c.theme, notionDe(c), nomType(c.type)].join(' ')).includes(m)))
+        .sort((a, b) => String(dateDe(b).j).localeCompare(String(dateDe(a).j))).slice(0, 25);
+      zone.hidden = false; apresVide && apresVide(true);
+      zone.replaceChildren(el('div', { class: 'liste' }, res.length ? res.map(c => ligneExo(c, { notion: true, mots })) : [el('p', { class: 'vide', text: 'Rien trouvé. Essaie un autre mot.' })]),
+        parentOk ? el('div', { class: 'actions-recherche' },
+          el('p', { class: 'muted petit', text: 'Avec « ' + (t.length > 40 ? t.slice(0, 40) + '…' : t) + ' » :' }),
+          el('button', { class: 'btn', type: 'button', text: '✨ Créer un exercice avec ce texte', onclick: () => { prepa = { texte: t }; location.hash = '#/p/generer'; } }),
+          el('button', { class: 'btn', type: 'button', text: '📅 Ajouter à la semaine', onclick: () => { prepa = { titre: t }; location.hash = '#/p/semaine'; } }),
+          el('button', { class: 'btn', type: 'button', text: '💬 Envoyer comme demande à l\'IA', onclick: () => { prepa = { demande: t }; location.hash = '#/p/exercices'; } })) : null);
     };
-    function dessiner() {
-      chips.replaceChildren(...['Tout', ...mats].map(m => el('button', { type: 'button', 'aria-pressed': String((m === 'Tout' ? '' : m) === filtre.matiere), text: m, onclick: () => { filtre.matiere = m === 'Tout' ? '' : m; dessiner(); } })));
-      const mots = norm(filtre.q).split(/\s+/).filter(Boolean);
-      const ok = c => (!filtre.matiere || c.matiere === filtre.matiere) && mots.every(m => norm([c.titre, c.matiere, c.theme, nomType(c.type)].join(' ')).includes(m));
-      const blocs = [];
-      mats.forEach(m => {
-        const dans = valides.filter(c => c.matiere === m && ok(c)); if (!dans.length) return;
-        blocs.push(el('p', { class: 'matiere', text: m }));
-        [...new Set(dans.map(c => c.theme))].sort((a, b) => a.localeCompare(b, 'fr')).forEach(t => {
-          blocs.push(el('h3', {}, surligne(t, mots)));
-          dans.filter(c => c.theme === t).forEach(c => blocs.push(tuile(c, mots)));
-        });
-      });
-      liste.replaceChildren(...(blocs.length ? blocs : [el('p', { class: 'vide', text: valides.length ? 'Rien trouvé. Essaie un autre mot.' : 'Pas encore d\'exercice.' })]));
-      /* Mode parent : le texte tapé peut devenir un exercice, une tâche ou une demande */
-      const t = filtre.q.trim();
-      actions.replaceChildren(...(parentOk && t ? [el('div', { class: 'actions-recherche' },
-        el('p', { class: 'muted petit', text: 'Avec « ' + (t.length > 40 ? t.slice(0, 40) + '…' : t) + ' » :' }),
-        el('button', { class: 'btn', type: 'button', text: '✨ Créer un exercice avec ce texte', onclick: () => { prepa = { texte: t }; location.hash = '#/p/generer'; } }),
-        el('button', { class: 'btn', type: 'button', text: '📅 Ajouter à la semaine', onclick: () => { prepa = { titre: t }; location.hash = '#/p/semaine'; } }),
-        el('button', { class: 'btn', type: 'button', text: '💬 Envoyer comme demande à l\'IA', onclick: () => { prepa = { demande: t }; location.hash = '#/p/exercices'; } }))] : []));
-    }
     q.addEventListener('input', () => { filtre.q = q.value; x.hidden = !q.value; dessiner(); });
     x.onclick = () => { q.value = ''; filtre.q = ''; x.hidden = true; dessiner(); q.focus(); };
+    setTimeout(dessiner, 0);
+    return el('div', { class: 'recherche', role: 'search' }, el('span', { class: 'loupe', 'aria-hidden': 'true', text: '🔍' }), q, x);
+  }
+  function tirelireBande() {
+    const n = D.etoiles || 0, rec = (D.recompenses || []).slice().sort((a, b) => a.cout - b.cout), choisie = (D.choix || [])[0];
+    const prochaine = rec.find(r => Number(r.cout) > n), possible = rec.filter(r => Number(r.cout) <= n).pop();
+    const txt = choisie ? 'Tu as choisi : ' + sansEmoji(choisie.nom) + ' !' : possible ? 'Tu peux avoir « ' + sansEmoji(possible.nom) + ' »' : prochaine ? 'encore ' + (prochaine.cout - n) + ' pour « ' + sansEmoji(prochaine.nom) + ' »' : 'Gagne des étoiles !';
+    return el('a', { class: 'tire', href: '#/tirelire', 'aria-label': 'Ma tirelire : ' + n + ' étoiles' }, el('span', { class: 'piece', 'aria-hidden': 'true', text: '★' }),
+      el('span', { class: 'tire-n' }, el('b', { text: String(n) }), D.attente ? el('small', { text: ' +' + D.attente }) : null), el('span', { class: 'tire-txt', text: txt }), el('span', { class: 'fl', text: '›' }));
+  }
 
-    /* Devoirs à préparer ce soir, tirés de la semaine préparée par les parents */
+  /* ---------- Accueil de Faël : ce soir, rien d'autre ---------- */
+  function ecranAccueil() {
     const pj = prochainJourEcole(), taches = (D.taches || []).filter(t => t.jour === pj);
-    const blocDevoirs = taches.length ? el('section', { class: 'carte devoirs' },
+    const blocDevoirs = taches.length ? el('section', { class: 'bloc-soir' },
       el('h2', { text: 'Mes devoirs pour ' + nomJour(pj) }),
-      el('p', { class: 'muted petit', text: 'Ce que la maîtresse a donné. Je touche une ligne pour commencer, et je coche quand c\'est fait.' }),
       el('div', { class: 'liste' }, taches.map(t => el('a', { class: 'case' + (t.statut === 'fait' ? ' fait' : ''), href: '#/tache/' + t.id },
         el('span', { class: 'coche', text: t.statut === 'fait' ? '✓' : '' }),
         el('span', {}, el('span', { class: 't', text: t.titre }), t.matiere ? el('span', { class: 's muted petit', style: 'display:block', text: t.matiere + (t.contenu ? ' · exercice dans l\'appli' : '') }) : null)))))
-      : parentOk ? el('p', { class: 'aide petit', text: 'Rien de prévu pour ' + nomJour(pj) + '. Les devoirs se préparent dans l\'onglet Semaine.' }) : null;
-
-    page(tete('Mes cahiers', null, badgeEtoiles()),
+      : null;
+    const lies = new Set(taches.map(t => String(t.contenu)));
+    const aRevoir = contenus().filter(c => !lies.has(String(c.id)) && etatDe(c) === 'revoir')
+      .sort((a, b) => String((infoDe(b) || {}).derniere).localeCompare(String((infoDe(a) || {}).derniere))).slice(0, 2);
+    const blocRevoir = aRevoir.length ? el('section', { class: 'bloc-soir' }, el('h2', { text: '🔁 À revoir' }), el('div', { class: 'liste' }, aRevoir.map(c => ligneExo(c, { notion: true })))) : null;
+    const rien = !blocDevoirs && !blocRevoir ? el('section', { class: 'bloc-soir' }, el('h2', { text: 'Rien de prévu ce soir' }),
+      el('p', { class: 'muted', text: parentOk ? 'Les devoirs se préparent dans l\'onglet Semaine.' : 'Tu peux t\'entraîner dans tes cahiers, si tu veux.' })) : null;
+    const soir = el('div', { class: 'soir' }, blocDevoirs, blocRevoir, rien);
+    const resultats = el('div', { hidden: true });
+    const d = dateJ(jour());
+    page(tete('Ce soir', null, el('a', { class: 'rond', href: '#/parents', 'aria-label': 'Espace parents', text: parentOk ? '🔓' : '🔒' })),
       parentOk ? el('div', { class: 'mode-parent' }, el('span', { text: '🔓 Mode parent' }), el('button', { class: 'btn discret', type: 'button', text: 'Verrouiller', onclick: () => { parentOk = false; ecranAccueil(); } })) : null,
-      carteTirelire(),
-      blocDevoirs,
-      el('div', { class: 'recherche', role: 'search' }, el('span', { class: 'loupe', 'aria-hidden': 'true', text: '🔍' }), q, x),
-      actions, chips, liste,
-      el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }),
-      el('a', { class: 'tuile parents', href: '#/parents' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: parentOk ? '🔓' : '🔒' }),
-        el('span', {}, el('span', { class: 't', text: 'Espace parents' }), el('span', { class: 's', text: 'Semaine · Exercices · Carnet de bord · Conseils · Réglages' })), el('span', { class: 'fl', text: '›' })));
-    dessiner();
+      el('p', { class: 'sous-date', text: JOURS[d.getDay()].replace(/^./, x => x.toUpperCase()) + ' ' + d.getDate() + ' ' + MOIS[d.getMonth()] }),
+      tirelireBande(), soir,
+      barreRecherche(resultats, plein => { soir.hidden = plein; }), resultats,
+      el('a', { class: 'gros-btn cahiers', href: '#/cahiers' }, '📚 Mes cahiers'),
+      el('a', { class: 'btn ok large', href: '#/fini', text: '🎉 J\'ai fini !' }));
+  }
+
+  /* ---------- Mes cahiers : un cahier par matière › notions › mois › semaines ---------- */
+  function compteEtats(l) { const o = { revoir: 0, nouveau: 0 }; l.forEach(c => { const e = etatDe(c); if (o[e] != null) o[e]++; }); return o; }
+  const pastillesEtat = o => el('span', { class: 'pts' }, o.revoir ? el('span', { class: 'etat e-revoir', text: o.revoir + ' à revoir' }) : null, o.nouveau ? el('span', { class: 'etat e-new', text: o.nouveau + ' nouveau' + (o.nouveau > 1 ? 'x' : '') }) : null);
+  function ecranCahiers(m, n) {
+    m = m ? decodeURIComponent(m) : ''; n = n ? decodeURIComponent(n) : '';
+    const tous = contenus();
+    const legende = el('p', { class: 'legende', text: '🆕 nouveau · ✓ fait · 🔁 à revoir · ⭐ je sais' });
+    if (!m) {
+      const mats = Object.keys((D && D.notions) || NOTIONS_DEF).concat([...new Set(tous.map(c => c.matiere))].filter(x => !NOTIONS_DEF[x] && !((D && D.notions) || {})[x]));
+      const resultats = el('div', { hidden: true }), grille = el('div', { class: 'cahiers-grille' }, mats.map(mt => {
+        const l = tous.filter(c => c.matiere === mt), co = COUL_MAT[mt] || '#5d6680';
+        return el(l.length ? 'a' : 'div', { class: 'cahier-mat' + (l.length ? '' : ' vide'), href: l.length ? '#/cahiers/' + encodeURIComponent(mt) : null, style: '--c:' + co },
+          el('span', { class: 'cahier-ic', 'aria-hidden': 'true', text: ICO_MAT[mt] || '📗' }), el('b', { text: mt }),
+          el('small', { text: l.length ? l.length + ' exercice' + (l.length > 1 ? 's' : '') : 'pas encore d\'exercice' }), l.length ? pastillesEtat(compteEtats(l)) : null);
+      }));
+      page(tete('Mes cahiers', '#/'), barreRecherche(resultats, plein => { grille.hidden = plein; }), resultats, grille, legende);
+      return;
+    }
+    const dansM = tous.filter(c => c.matiere === m), co = COUL_MAT[m] || '#5d6680';
+    if (!n) {
+      const ns = notionsDe(m).concat(dansM.some(c => notionDe(c) === 'Autres') ? ['Autres'] : []);
+      const avec = ns.filter(x => dansM.some(c => notionDe(c) === x)), sans = ns.filter(x => !avec.includes(x));
+      page(tete(m, '#/cahiers'),
+        el('div', { class: 'liste' }, avec.map(x => {
+          const l = dansM.filter(c => notionDe(c) === x), der = l.map(c => dateDe(c).j).filter(Boolean).sort().pop();
+          return el('a', { class: 'notion', href: '#/cahiers/' + encodeURIComponent(m) + '/' + encodeURIComponent(x), style: '--c:' + co },
+            el('span', {}, el('b', { text: x }), el('small', { text: l.length + ' exercice' + (l.length > 1 ? 's' : '') + (der ? ' · dernier le ' + jourCourt(der) : '') })), pastillesEtat(compteEtats(l)));
+        })),
+        sans.length ? el('p', { class: 'muted petit', text: 'Pas encore d\'exercice en : ' + sans.join(', ') + '.' }) : null, legende);
+      return;
+    }
+    const l = dansM.filter(c => notionDe(c) === n).sort((a, b) => String(dateDe(b).j).localeCompare(String(dateDe(a).j)));
+    const parMois = {}; l.forEach(c => { const j = dateDe(c).j, k = j ? j.slice(0, 7) : 'sans'; (parMois[k] = parMois[k] || []).push(c); });
+    const cles = Object.keys(parMois).sort().reverse(), moisCourant = jour().slice(0, 7);
+    page(tete(n, '#/cahiers/' + encodeURIComponent(m)), el('p', { class: 'fil', text: m + ' › ' + n + ' · ' + l.length + ' exercice' + (l.length > 1 ? 's' : '') }),
+      ...cles.map((k, i) => {
+        const lib = k === 'sans' ? 'Sans date' : MOIS[Number(k.slice(5, 7)) - 1].replace(/^./, x => x.toUpperCase()) + ' ' + k.slice(0, 4);
+        const parSem = {}; parMois[k].forEach(c => { const j = dateDe(c).j, w = j ? lundiDe(j) : ''; (parSem[w] = parSem[w] || []).push(c); });
+        return el('details', { class: 'mois', open: k === moisCourant || i === 0 }, el('summary', {}, el('span', { text: lib }), el('small', { text: String(parMois[k].length) })),
+          ...Object.keys(parSem).sort().reverse().flatMap(w => [w ? el('p', { class: 'sem', text: 'Semaine du ' + dateJ(w).getDate() + ' ' + MOIS[dateJ(w).getMonth()] }) : null,
+            el('div', { class: 'liste' }, parSem[w].map(c => ligneExo(c)))]));
+      }), legende);
   }
 
   /* Une tâche de devoirs, côté Faël : minuteur, exercice lié, je coche */
@@ -477,9 +562,12 @@
   const AIDE = {
     accueil: { titre: 'L\'accueil de Faël', icone: '🏠',
       quoi: 'L\'écran que Faël voit en ouvrant l\'appli. Tout y est pensé pour qu\'il sache quoi faire sans aide.',
-      comment: ['En haut, sa tirelire : ses étoiles, celles qui attendent votre validation, et la prochaine récompense avec une jauge.',
+      comment: ['« Ce soir » : un seul écran, une seule question — qu\'est-ce que je fais maintenant ? En haut, sa tirelire en une bande (touchez-la pour la voir en entier).',
         '« Mes devoirs pour… » : les devoirs du prochain jour d\'école, tirés de l\'onglet Semaine. Il touche une ligne, lance un minuteur de 10 minutes, ouvre l\'exercice lié, puis coche.',
-        'La barre de recherche et les matières pour retrouver un exercice. En mode parent (après le code), la même barre propose aussi : créer un exercice avec le texte tapé, l\'ajouter à la semaine, ou l\'envoyer comme demande à l\'IA.',
+        '« À revoir » : un ou deux exercices qu\'il a ratés récemment, pour réviser quelques minutes.',
+        '« Mes cahiers » : un cahier par matière ; dedans, les notions (Conjugaison, Dictée…) ; dans une notion, les exercices par mois et par semaine, avec leur date et leur état : 🆕 nouveau, ✓ fait, 🔁 à revoir, ⭐ je sais.',
+        'La barre de recherche, surtout pour vous : en mode parent, elle propose aussi de créer un exercice avec le texte tapé, de l\'ajouter à la semaine ou de l\'envoyer comme demande à l\'IA.',
+        'Chaque exercice est nommé par sa notion en quelques mots (« Verbes en -ir au présent ») et rangé dans une liste fixe de notions du programme de CE2 : plus de thèmes en double.',
         '« J\'ai fini ! » : il montre ses étoiles gagnées ; un parent les valide avec le code.',
         '« Espace parents » : protégé par le code parents (Réglages).'],
       astuce: 'Le mode parent reste ouvert jusqu\'à « Verrouiller » ou la validation des étoiles : pensez à verrouiller avant de rendre le téléphone.' },
@@ -573,7 +661,7 @@
 
   /* Visite guidée : parcourt les écrans, se relance à tout moment (aide ou Réglages) */
   const ETAPES_VISITE = [
-    { route: '#/', cle: 'accueil', texte: 'Voici l\'accueil de Faël : sa tirelire, ses devoirs du soir, la recherche et « J\'ai fini ! ». En mode parent, la barre de recherche vous propose aussi des actions.' },
+    { route: '#/', cle: 'accueil', texte: 'Voici l\'accueil de Faël : « Ce soir ». Sa tirelire, ses devoirs du soir, ce qu\'il a à revoir, puis « Mes cahiers » (une matière, des notions, les exercices datés) et « J\'ai fini ! ». La recherche sert surtout aux parents.' },
     { route: '#/p/semaine', cle: 'semaine', texte: 'La Semaine : photographiez l\'agenda, l\'IA range les devoirs par jour. Les besoins passent au vert quand ils sont prêts ; Faël voit chaque soir ceux du lendemain.' },
     { route: '#/p/exercices', cle: 'exercices', texte: 'Exercices : créez un exercice depuis une photo de leçon ou en saisie directe, et demandez des changements à l\'IA (annulables).' },
     { route: '#/p/etoiles', cle: 'etoiles', texte: 'Étoiles : validez les étoiles gagnées, gérez les récompenses, donnez celles que Faël a choisies, suivez ce qu\'il gagne chaque semaine.' },
@@ -776,7 +864,7 @@
         'Tu as trouvé ' + premiers + ' réponse' + (premiers > 1 ? 's' : '') + ' sur ' + total + '. Les autres reviendront pour t\'entraîner.';
       if (!test) envoyer({ resultats: j.map(x => Object.assign({ horodatage: new Date().toISOString().slice(0, 19).replace('T', ' ') }, x)), etoiles: gagne, motif: 'Séance : ' + c.titre })
         .then(() => { const b = $('.etoiles'); if (b && D) b.replaceWith(badgeEtoiles()); });
-      if (D && !test) { D.attente = (D.attente || 0) + gagne; store.set('donnees', D); }
+      if (D && !test) { D.attente = (D.attente || 0) + gagne; store.set('donnees', D); noterSeance(c.id, total ? Math.round(100 * premiers / total) : 100); }
       page(tete('Bilan', retour, badgeEtoiles()), el('section', { class: 'carte bilan' },
         el('h2', { text: 'Séance terminée' }), el('span', { class: 'gros', text: '+' + gagne + ' ★' }),
         el('p', { text: phrase }),
@@ -1178,7 +1266,11 @@
     const titre = el('input', { value: c.titre || '', placeholder: 'Ex. : Dictée du 9 novembre' });
     const matiere = el('select', {}, [...new Set([...MATIERES, c.matiere].filter(Boolean))].map(m => el('option', { value: m, text: m, selected: m === c.matiere })));
     const themes = [...new Set(contenus().map(x => x.theme).filter(Boolean))];
-    const theme = el('input', { value: c.theme || '', list: 'themes', placeholder: 'Même nom que le dossier du Drive' });
+    /* Notion (cahier) : prise dans la liste fermée de la matière */
+    const theme = el('select', { 'aria-label': 'Notion' });
+    const remplirNotions = () => { const l = notionsDe(matiere.value), cour = notionDe({ matiere: matiere.value, theme: theme.value || c.theme, titre: c.titre });
+      theme.replaceChildren(...l.map(n => el('option', { value: n, text: n, selected: n === cour }))); };
+    remplirNotions(); matiere.addEventListener('change', remplirNotions);
     const dl = el('datalist', { id: 'themes' }, themes.map(t => el('option', { value: t })));
     let corps, lire;
     if (ty === 'conjugaison') {
@@ -1210,7 +1302,7 @@
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
         el('p', { class: 'muted petit', text: nomType(ty) + ' · ' + (c.source || '') }),
         el('label', { class: 'champ' }, 'Titre', titre),
-        el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Matière', matiere), el('label', { class: 'champ' }, 'Thème', theme, dl)),
+        el('div', { class: 'grille2' }, el('label', { class: 'champ' }, 'Matière', matiere), el('label', { class: 'champ' }, 'Cahier (notion)', theme)),
         corps,
         el('label', { class: 'champ' }, 'Je retiens (facultatif)', el('span', { class: 'aide-champ', text: 'Une carte par bloc : 1re ligne = titre, puis le texte, et « Ex : » pour un exemple.' }), retiens),
         c.texteLu ? el('details', { class: 'lu' }, el('summary', { text: 'Le texte de départ' }), el('pre', { text: c.texteLu })) : null),
@@ -1656,6 +1748,7 @@
     if (a === 'tache') return ecranTache(b);
     if (a === 'fini') return ecranFini();
     if (a === 'tirelire') return ecranTirelire();
+    if (a === 'cahiers') return ecranCahiers(b, c);
     if (a === 'parents') return porteParents(() => { ecranSemaine(); if (!store.get('visiteFaite', false)) setTimeout(() => lancerVisite(0), 500); });
     if (a === 'essai') return porteParents(() => ecranSeance(b, true));
     if (a === 'p') return porteParents(() => {

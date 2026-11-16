@@ -375,3 +375,46 @@ button[aria-busy=true]{opacity:.55;cursor:progress}
 .apercu-q p.ok{color:var(--good)}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .avis-etoile:not(.pleine){color:#5f6b9a;border:2px solid #3a4677}}
 :root[data-theme=dark] .avis-etoile:not(.pleine){color:#5f6b9a;border:2px solid #3a4677}
+
+/* ---------- Accueil « Ce soir » et Mes cahiers (16/11/2026) ---------- */
+.sous-date{margin:-6px 0 0;color:var(--muted);font-size:.95rem}
+.tire{display:flex;align-items:center;gap:10px;background:var(--accent);color:#fff;border-radius:16px;padding:10px 14px;text-decoration:none;box-shadow:0 4px 0 var(--accent-fonce);min-height:52px}
+.tire .piece{flex:none;width:32px;height:32px;border-radius:50%;background:var(--star-vif);display:grid;place-items:center;color:#fff;font-size:1.05rem;box-shadow:0 2px 0 #c99700}
+.tire-n b{font-family:'Baloo 2',sans-serif;font-size:1.4rem}.tire-n small{opacity:.85;margin-left:2px}
+.tire-txt{font-size:.9rem;line-height:1.25;opacity:.95}
+.tire .fl{margin-left:auto;opacity:.8}
+.soir{display:flex;flex-direction:column;gap:12px}
+.bloc-soir{background:var(--paper);border-radius:20px;padding:14px;display:flex;flex-direction:column;gap:10px;box-shadow:0 4px 0 var(--relief)}
+.bloc-soir h2{margin:0;font-family:'Baloo 2',sans-serif;font-size:1.25rem;color:var(--accent-fonce)}
+.bloc-soir p{margin:0}
+.ex{display:flex;align-items:center;gap:12px;padding:12px;border-radius:14px;background:var(--paper);min-height:64px;text-decoration:none;color:inherit;box-shadow:0 2px 0 var(--relief);width:100%;box-sizing:border-box}
+.bloc-soir .ex{background:var(--desk);box-shadow:none}
+.ex .ic{font-size:1.5rem;width:34px;text-align:center;flex:none}
+.ex-txt{min-width:0}.ex-txt b{display:block;font-size:1.05rem;line-height:1.25}.ex-txt small{color:var(--muted);font-size:.85rem}
+.etat{margin-left:auto;flex:none;font-size:.8rem;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap}
+.e-new{background:#e5ebff;color:#1b338f}.e-fait{background:#dff3e7;color:#0d5e36}.e-revoir{background:#fdebd6;color:#9a4a00}.e-su{background:#fff3c4;color:#7a5600}
+.gros-btn.cahiers{display:flex;align-items:center;justify-content:center;gap:10px;min-height:62px;border-radius:18px;font-family:'Baloo 2',sans-serif;font-weight:800;font-size:1.25rem;text-decoration:none;background:var(--paper);color:var(--accent-fonce);border:2px solid var(--accent);box-shadow:0 4px 0 var(--relief)}
+.cahiers-grille{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cahier-mat{display:flex;flex-direction:column;gap:4px;min-height:150px;padding:14px 14px 14px 22px;border-radius:8px 18px 18px 8px;background:var(--paper);text-decoration:none;color:inherit;box-shadow:0 4px 0 var(--relief);border-left:12px solid var(--c);position:relative}
+.cahier-mat::before{content:"";position:absolute;left:6px;top:14px;bottom:14px;width:2px;background:repeating-linear-gradient(var(--c) 0 6px,transparent 6px 12px);opacity:.35}
+.cahier-mat .cahier-ic{font-size:2rem}
+.cahier-mat b{font-family:'Baloo 2',sans-serif;font-size:1.15rem;line-height:1.15;color:var(--c)}
+.cahier-mat small{color:var(--muted);font-size:.85rem}
+.cahier-mat .pts{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
+.cahier-mat .pts .etat{margin-left:0}
+.cahier-mat.vide{opacity:.55;box-shadow:none}
+.notion{display:flex;align-items:center;gap:12px;background:var(--paper);border-radius:16px;padding:12px 14px;min-height:64px;box-shadow:0 3px 0 var(--relief);border-left:8px solid var(--c);text-decoration:none;color:inherit}
+.notion b{font-size:1.1rem;display:block}.notion small{color:var(--muted);font-size:.85rem}
+.notion .pts{margin-left:auto;display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+.mois{background:transparent}
+.mois>summary{font-family:'Baloo 2',sans-serif;font-weight:800;font-size:1.1rem;display:flex;justify-content:space-between;align-items:center;background:var(--paper);border-radius:14px;padding:10px 14px;box-shadow:0 3px 0 var(--relief);cursor:pointer;list-style:none;min-height:48px;box-sizing:border-box}
+.mois>summary::-webkit-details-marker{display:none}
+.mois>summary small{font-family:Andika,sans-serif;font-weight:400;color:var(--muted)}
+.mois>summary small::after{content:" ▸"}.mois[open]>summary small::after{content:" ▾"}
+.mois[open]{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.sem{font-weight:700;color:var(--muted);font-size:.82rem;text-transform:uppercase;letter-spacing:.04em;margin:6px 4px 0}
+.fil{color:var(--muted);font-size:.9rem;margin:-4px 0 0}
+.legende{text-align:center;color:var(--muted);font-size:.85rem;margin-top:8px}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .e-new{background:#25336b;color:#cdd8ff}:root:not([data-theme=light]) .e-fait{background:#123d29;color:#9fe0bb}:root:not([data-theme=light]) .e-revoir{background:#4a2e10;color:#ffd2a1}:root:not([data-theme=light]) .e-su{background:#4a3c0c;color:#ffe48a}:root:not([data-theme=light]) .cahier-mat b{color:#fff}}
+:root[data-theme=dark] .e-new{background:#25336b;color:#cdd8ff}:root[data-theme=dark] .e-fait{background:#123d29;color:#9fe0bb}:root[data-theme=dark] .e-revoir{background:#4a2e10;color:#ffd2a1}:root[data-theme=dark] .e-su{background:#4a3c0c;color:#ffe48a}
+[hidden]{display:none !important}
