@@ -1717,7 +1717,7 @@
         el('label', { class: 'champ' }, 'Code parents', el('span', { class: 'aide-champ', text: 'Pour que Faël n\'entre pas dans l\'espace parents. Vide = pas de code.' }), code)),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:10px' },
         el('h2', { text: 'Intelligence artificielle' }),
-        el('p', { class: 'version-moteur ' + (D.version ? 'ok' : 'ko'), text: D.version ? '✅ Moteur en version ' + D.version : '⚠️ Moteur ancien (avant 5.7) : l\'adresse reliée ne sert pas la dernière version.' }),
+        el('p', { class: 'version-moteur ' + (D.version || D.etats ? 'ok' : 'ko'), text: D.version || D.etats ? '✅ Moteur en version ' + (D.version || '5.7') : '⚠️ Moteur ancien (avant 5.7) : l\'adresse reliée ne sert pas la dernière version.' }),
         el('p', { text: D.mistral ? 'Fournisseur : ' + D.ia + '. Création et correction des exercices : le meilleur Mistral disponible (Large), cherché automatiquement. Explications et conseils : Mistral Small, plus rapide, Medium en secours.' : 'Pas encore de clé dans le moteur.' }),
         resultatTest,
         el('button', { class: 'btn', type: 'button', text: 'Tester les capacités', onclick: async ev => { const bt = ev.currentTarget;
