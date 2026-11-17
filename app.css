@@ -419,3 +419,14 @@ button[aria-busy=true]{opacity:.55;cursor:progress}
 :root[data-theme=dark] .e-new{background:#25336b;color:#cdd8ff}:root[data-theme=dark] .e-fait{background:#123d29;color:#9fe0bb}:root[data-theme=dark] .e-revoir{background:#4a2e10;color:#ffd2a1}:root[data-theme=dark] .e-su{background:#4a3c0c;color:#ffe48a}
 [hidden]{display:none !important}
 .version-moteur{font-weight:700;margin:0}.version-moteur.ko{color:#b45309}.version-moteur.ok{color:var(--good)}
+
+/* ---------- Pièces d'un exercice (17/11/2026) ---------- */
+.pieces{display:flex;flex-direction:column;gap:10px}
+.piece{background:var(--desk);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.piece-haut{display:flex;gap:10px;align-items:flex-start}
+.piece-haut img{width:72px;height:72px;object-fit:cover;border-radius:10px;flex:none;background:var(--paper)}
+.piece-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.piece-info select{min-height:44px}
+.piece-etat{font-size:.85rem;color:var(--muted)}.piece-etat.ok{color:var(--good)}.piece-etat.ko{color:#b45309}.piece-etat.lecture{color:var(--accent)}
+.piece .x{flex:none;width:44px;height:44px;border-radius:12px;border:0;background:var(--paper);font-size:1.1rem;cursor:pointer}
+.piece-texte{min-height:120px;width:100%;box-sizing:border-box;margin-top:6px}

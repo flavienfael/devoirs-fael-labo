@@ -989,7 +989,7 @@
     const demande = prepa && prepa.demande; prepa = null;
     pageP('Exercices', 'exercices', null, bandeauPret(), blocFormatsEssai(),
       el('a', { class: 'tuile', href: '#/p/generer' }, el('span', { class: 'ic', 'aria-hidden': 'true', text: '📷' }),
-        el('span', {}, el('span', { class: 't', text: 'À partir d\'une photo ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'L\'IA lit la leçon et prépare l\'exercice' : 'Lecture de photo sur le téléphone' })), el('span', { class: 'fl', text: '›' })),
+        el('span', {}, el('span', { class: 't', text: 'À partir de photos, d\'images ou d\'un texte' }), el('span', { class: 's', text: D.mistral ? 'Leçon, exercices du cahier, schémas : l\'IA lit tout et prépare l\'exercice' : 'Lecture des photos sur le téléphone' })), el('span', { class: 'fl', text: '›' })),
       el('h3', { text: 'Saisie directe' }),
       el('div', { class: 'liste' }, Object.keys(TYPES).map(ty => el('a', { class: 'tuile', href: '#/p/nouveau/' + ty },
         el('span', { class: 'ic', 'aria-hidden': 'true', text: ICONES[ty] }), el('span', {}, el('span', { class: 't', text: TYPES[ty] }), el('span', { class: 's', text: AIDES_TYPES[ty] })), el('span', { class: 'fl', text: '›' })))),
@@ -1344,50 +1344,86 @@
     try { const r = await w.recognize(dataUrl); return r.data.text || ''; } finally { w.terminate(); }
   }
 
+  /* ---------- Créer un exercice à partir de plusieurs pièces ----------
+     Photos, images de la galerie, texte : chaque image est lue par l'IA, qui dit ce que c'est
+     (leçon, exercice du cahier, support visuel). Le parent peut corriger l'étiquette ou le texte lu. */
+  const ROLES_PIECE = { lecon: '📘 Leçon', exercice: '📝 Exercice', visuel: '🖼️ Visuel', autre: '📄 Autre' };
   function ecranGenerer() {
     const lien = prepa; prepa = null;
     const ia = D.mistral, nomIA = D.ia ? 'l\'IA (Mistral via ' + D.ia + ')' : 'l\'IA';
-    const ty = el('select', {}, Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t], selected: t === 'qcm' })),
+    const ty = el('select', {}, el('option', { value: 'auto', text: '✨ L\'IA choisit le plus adapté', selected: true }),
+      Object.keys(TYPES).map(t => el('option', { value: t, text: TYPES[t] })),
       typesPlus().map(t => el('option', { value: t.type, text: '🧪 ' + (t.nom || nomType(t.type)) + (t.statut === 'essai' ? ' (nouveau format, en essai)' : '') })));
-    const texte = el('textarea', { placeholder: 'Tape ou colle ici la leçon, la liste de mots, l\'exercice… ou prends une photo : le texte s\'écrit ici tout seul.' });
+    const texte = el('textarea', { placeholder: 'Facultatif : tape ou colle ici un texte (leçon, liste de mots, consigne de la maîtresse…).' });
     if (lien && lien.texte) texte.value = lien.texte;
     const precision = el('input', { placeholder: 'Ex. : seulement les mots en bleu ; 10 questions faciles' });
-    const photo = el('input', { type: 'file', accept: 'image/*' });
-    const apercu = el('div');
-    let image = null, lecture = false;
-    /* Lecture automatique de la photo : par l'IA si elle est activée, sinon sur le téléphone.
-       Un petit repère discret à côté du champ texte dit qui a lu ; le téléphone sert de secours. */
-    const repere = el('span', { class: 'repere-lecture', role: 'status', hidden: true }), barrePhoto = el('div');
-    const secours = el('button', { class: 'btn-lien', type: 'button', hidden: true, text: 'Lire sur le téléphone à la place', onclick: () => lireLocal() });
-    const marquer = (etat, txt) => { repere.hidden = false; repere.className = 'repere-lecture ' + etat; repere.textContent = txt; };
-    const ajouter = t => { texte.value = (t.trim() + (texte.value.trim() ? '\n\n' + texte.value : '')).trim(); };
-    async function lireLocal() {
-      secours.hidden = true; lecture = true; go.disabled = true;
-      try { ajouter(await lireSurTelephone('data:image/jpeg;base64,' + image.b64, m => marquer('cours', '📱 ' + m))); marquer('ok', '📱 Lu sur le téléphone · relis si besoin'); }
-      catch (e) { marquer('ko', e.message); }
-      lecture = false; go.disabled = !ia;
+    const pieces = []; let n = 0;
+    const grille = el('div', { class: 'pieces' }), resume = el('p', { class: 'muted petit', 'aria-live': 'polite' });
+    const enCours = () => pieces.some(p => p.statut === 'lecture');
+    const majResume = () => {
+      const ok = pieces.filter(p => p.statut === 'ok');
+      resume.textContent = !pieces.length ? 'Aucune pièce pour l\'instant : ajoute autant de photos ou d\'images que tu veux (leçon, exercices, schémas…).'
+        : pieces.length + ' pièce' + (pieces.length > 1 ? 's' : '') + (enCours() ? ' · lecture en cours…' : ' · ' + ok.length + ' lue' + (ok.length > 1 ? 's' : '')) ;
+      go.disabled = !ia || enCours();
+    };
+    function cartePiece(p) {
+      const role = el('select', { 'aria-label': 'Ce que c\'est' }, Object.entries(ROLES_PIECE).map(([v, t]) => el('option', { value: v, text: t, selected: v === p.role })));
+      role.addEventListener('change', () => { p.role = role.value; });
+      const lu = el('textarea', { class: 'piece-texte', 'aria-label': 'Texte lu' }); lu.value = p.texte || '';
+      lu.addEventListener('input', () => { p.texte = lu.value; });
+      const etat = el('span', { class: 'piece-etat ' + p.statut, text: p.statut === 'lecture' ? '✨ lecture…' : p.statut === 'ok' ? '✓ lu' + (p.texte ? ' · ' + p.texte.length + ' caractères' : '') + (p.description ? ' · image décrite' : '') : '⚠️ pas lu' });
+      const actions = el('div', { class: 'rangee' },
+        p.statut === 'ko' ? el('button', { class: 'btn', type: 'button', text: 'Réessayer', onclick: () => lire(p) }) : null,
+        p.statut === 'ko' ? el('button', { class: 'btn', type: 'button', text: 'Lire sur le téléphone', onclick: () => lireTel(p) }) : null);
+      p.carte = el('div', { class: 'piece' },
+        el('div', { class: 'piece-haut' }, el('img', { src: p.apercu, alt: 'Pièce ' + p.n }),
+          el('div', { class: 'piece-info' }, el('b', { text: 'Pièce ' + p.n }), etat, role),
+          el('button', { class: 'x', type: 'button', 'aria-label': 'Retirer la pièce ' + p.n, text: '✕', onclick: () => { pieces.splice(pieces.indexOf(p), 1); p.carte.remove(); majResume(); } })),
+        p.statut === 'ok' ? el('details', {}, el('summary', { class: 'petit', text: 'Voir ou corriger ce que l\'IA a lu' }), lu, p.description ? el('p', { class: 'muted petit', text: '🖼️ ' + p.description }) : null) : null,
+        actions);
+      return p.carte;
     }
-    async function lireIA() {
-      secours.hidden = true; lecture = true; go.disabled = true; marquer('cours', '✨ L\'IA lit la photo…');
-      try { const r = await patienter(() => api('lirePhoto', { photoBase64: image.b64 }), { dans: barrePhoto, duree: 10, messages: ['L\'IA lit la photo…', 'Elle recopie le texte…'] }); ajouter(r.texte || ''); marquer('ok', '✨ Lu par l\'IA · relis si besoin'); }
-      catch (e) { marquer('ko', '✨ L\'IA n\'a pas pu lire la photo.'); secours.hidden = false; }
-      lecture = false; go.disabled = !ia;
+    const redessiner = p => { const old = p.carte; old.replaceWith(cartePiece(p)); majResume(); };
+    /* Lecture : deux à la fois au plus, pour ne pas saturer le moteur */
+    const file = []; let actifs = 0;
+    function lire(p) { p.statut = 'lecture'; redessiner(p); file.push(p); pomper(); }
+    function pomper() {
+      while (actifs < 2 && file.length) {
+        const p = file.shift(); actifs++;
+        (ia ? api('lirePiece', { photoBase64: p.b64 }).then(r => { p.role = r.role || 'autre'; p.texte = r.texte || ''; p.description = r.description || ''; p.statut = 'ok'; })
+            : lireSurTelephone('data:image/jpeg;base64,' + p.b64, () => {}).then(t => { p.texte = t; p.statut = 'ok'; }))
+          .catch(() => { p.statut = 'ko'; })
+          .finally(() => { actifs--; redessiner(p); pomper(); });
+      }
     }
-    photo.addEventListener('change', async () => { const f = photo.files && photo.files[0]; if (!f) return; image = await reduire(f);
-      apercu.replaceChildren(el('img', { src: image.apercu, alt: '', style: 'max-width:160px;border-radius:8px' }));
-      api('deposerPhoto', { base64: image.b64, commentaire: precision.value.trim() }).catch(() => {});
-      ia ? lireIA() : lireLocal(); });
+    async function lireTel(p) { p.statut = 'lecture'; redessiner(p); try { p.texte = await lireSurTelephone('data:image/jpeg;base64,' + p.b64, () => {}); p.statut = 'ok'; } catch (e) { p.statut = 'ko'; } redessiner(p); }
+    async function ajouterFichiers(fs) {
+      for (const f of [...fs]) {
+        if (pieces.length >= 12) { toast('12 pièces au plus par exercice.', true); break; }
+        try {
+          const im = await reduire(f), p = { n: ++n, b64: im.b64, apercu: im.apercu, role: 'autre', texte: '', description: '', statut: 'lecture' };
+          pieces.push(p); grille.append(cartePiece(p)); majResume();
+          api('deposerPhoto', { base64: im.b64, commentaire: precision.value.trim() }).catch(() => {});
+          file.push(p); pomper();
+        } catch (e) { toast(e.message, true); }
+      }
+    }
+    const cam = el('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+    const gal = el('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
+    cam.addEventListener('change', () => { ajouterFichiers(cam.files || []); cam.value = ''; });
+    gal.addEventListener('change', () => { ajouterFichiers(gal.files || []); gal.value = ''; });
     const go = el('button', { class: 'btn plein large', type: 'button', text: 'Préparer l\'exercice avec l\'IA', disabled: !ia, onclick: async () => {
-      if (lecture) return toast('Attends la fin de la lecture de la photo.', true);
-      if (!texte.value.trim()) return toast('Il faut d\'abord un texte : tape-le ou prends une photo.', true);
+      if (enCours()) return toast('Attends la fin de la lecture des pièces.', true);
+      const lues = pieces.filter(p => p.statut === 'ok' && (p.texte || p.description)).map(p => ({ role: p.role, texte: p.texte, description: p.description }));
+      if (!lues.length && !texte.value.trim()) return toast('Ajoute au moins une photo, une image ou un texte.', true);
       try {
         const { r, c } = await patienter(async () => {
-          const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() }); r.donnees = deballer(r.type, r.donnees);
-          const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + (r.duree ? ', ' + r.duree + ' s' : '') + ')' } });
+          const r = await api('genererContenu', { type: ty.value, pieces: lues, texte: texte.value, precision: precision.value.trim() }); r.donnees = deballer(r.type, r.donnees);
+          const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + (r.duree ? ', ' + r.duree + ' s' : '') + (lues.length ? ', ' + lues.length + ' pièce' + (lues.length > 1 ? 's' : '') : '') + ')' } });
           await charger(); return { r, c };
-        }, { plein: true, bouton: go, duree: 45, messages: ['L\'IA lit la leçon…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Elle range l\'exercice…', 'Presque fini…'] });
+        }, { plein: true, bouton: go, duree: 45, messages: ['L\'IA relit les pièces…', 'Elle croise leçon et exercices…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Presque fini…'] });
         if (lien && lien.tache) {
-          const t = lien.tache; t.contenu = c.id; (t.besoins || []).forEach(b => { if (/exercice/.test(b.libelle) || (image && /photo/.test(b.libelle))) b.fait = true; });
+          const t = lien.tache; t.contenu = c.id; (t.besoins || []).forEach(b => { if (/exercice/.test(b.libelle) || (pieces.length && /photo/.test(b.libelle))) b.fait = true; });
           try { await api('enregistrerTache', { tache: t }); charger(); } catch (e) { /* le lien se refera à la main */ }
           toast('Prêt et relié à la tâche « ' + t.titre + ' » : Faël le voit déjà.'); location.hash = lien.retour || '#/p/semaine'; return;
         }
@@ -1395,14 +1431,19 @@
         location.hash = '#/p/exercices';
       } catch (e) { toast(e.message, true); }
     } });
-    page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Photo ou texte', (lien && lien.retour) || '#/p/exercices'),
-      ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : ajoute la clé dans le moteur (voir la notice). La photo est lue sur le téléphone en attendant.' }),
+    majResume();
+    page(tete(lien && lien.tache ? 'Exercice pour « ' + lien.tache.titre + ' »' : 'Créer un exercice', (lien && lien.retour) || '#/p/exercices'),
+      ia ? null : el('p', { class: 'aide', text: 'L\'IA n\'est pas encore activée : les photos sont lues sur le téléphone en attendant.' }),
       el('section', { class: 'carte', style: 'display:flex;flex-direction:column;gap:12px' },
-        el('div', { class: 'champ' }, '1. Photo de la leçon (facultatif)', boutonsPhoto(photo)), apercu, barrePhoto,
-        el('label', { class: 'champ' }, el('span', { class: 'lib-lecture' }, '2. Le texte de la leçon', repere), texte, secours),
-        el('label', { class: 'champ' }, '3. Type d\'exercice voulu', ty),
+        el('div', { class: 'champ' }, '1. Les pièces : leçon, exercices du cahier, schémas…',
+          el('div', { class: 'rangee' }, cam, gal,
+            el('button', { class: 'btn plein', type: 'button', text: '📷 Prendre une photo', onclick: () => cam.click() }),
+            el('button', { class: 'btn', type: 'button', text: '🖼️ Ajouter des images', onclick: () => gal.click() }))),
+        resume, grille,
+        el('label', { class: 'champ' }, '2. Un texte en plus (facultatif)', texte),
+        el('label', { class: 'champ' }, '3. Type d\'exercice', ty),
         el('label', { class: 'champ' }, 'Précision pour l\'IA (facultatif)', precision),
-        el('p', { class: 'muted petit', text: 'Seul le texte de la leçon part vers ' + nomIA + ' : jamais le prénom de Faël ni le journal. L\'exercice est disponible tout de suite ; tu peux le corriger ou donner un retour ensuite.' })),
+        el('p', { class: 'muted petit', text: 'Chaque image est lue par ' + nomIA + ', qui reconnaît si c\'est une leçon, un exercice ou un support visuel ; tu peux corriger. Seuls les textes lus partent pour créer l\'exercice : jamais le prénom de Faël ni le journal.' })),
       go);
   }
   /* Deux boutons : l'appareil photo s'ouvre directement, ou on choisit une image déjà prise */
