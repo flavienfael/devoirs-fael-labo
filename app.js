@@ -213,9 +213,9 @@
       catch (e) { console.error('Format ' + c.type, e); return []; }
     } else if (c.type === 'qcm') {
       (d.questions || []).forEach((q, i) => {
-        const choix = (q.choix || []).filter(Boolean); if (choix.length < 2) return;
-        const bonne = choix[Math.min(Number(q.bonne) || 0, choix.length - 1)];
-        out.push({ cle: 'q:' + i, mode: 'choix', diff: i, consigne: q.consigne || 'Choisis la bonne réponse.', enonce: q.question || '', dire: [{ texte: q.question }],
+        const brut = (q.choix || []).filter(Boolean), bonne = brut[Math.min(Number(q.bonne) || 0, brut.length - 1)];
+        const choix = [...new Set(brut)]; if (choix.length < 2) return; /* un choix en double = deux bonnes réponses : on dédouble */
+        out.push({ cle: 'q:' + i, mode: 'choix', diff: i, consigne: q.consigne || d.consigne || 'Choisis la bonne réponse.', enonce: q.question || '', dire: [{ texte: q.question }],
           choix: melange(choix), bonne, aide: q.aide || 'Relis la question doucement, puis élimine les réponses impossibles.', explication: q.explication || ('La bonne réponse est : ' + bonne + '.') });
       });
     }
@@ -229,9 +229,9 @@
     if (!TYPES[c.type]) { try { const f = CFT()[c.type] && CFT()[c.type].defis; return f ? (f(d, outilsTypes()) || []).map((q, i) => Object.assign({ defi: true }, q, { cle: 'd:' + (q.cle || i), aide: '' })) : []; } catch (e) { return []; } }
     if (c.type === 'qcm') {
       (d.defis && d.defis.length ? d.defis : (d.questions || []).slice(-3)).forEach((q, i) => {
-        const choix = (q.choix || []).filter(Boolean); if (choix.length < 2) return;
-        const bonne = choix[Math.min(Number(q.bonne) || 0, choix.length - 1)];
-        out.push({ cle: 'd:' + i, mode: 'choix', consigne: q.consigne || 'Choisis la bonne réponse.', enonce: q.question || '', dire: [{ texte: q.question }], choix: melange(choix), bonne, explication: q.explication || ('La bonne réponse est : ' + bonne + '.') });
+        const brut = (q.choix || []).filter(Boolean), bonne = brut[Math.min(Number(q.bonne) || 0, brut.length - 1)];
+        const choix = [...new Set(brut)]; if (choix.length < 2) return;
+        out.push({ cle: 'd:' + i, mode: 'choix', consigne: q.consigne || d.consigne || 'Choisis la bonne réponse.', enonce: q.question || '', dire: [{ texte: q.question }], choix: melange(choix), bonne, explication: q.explication || ('La bonne réponse est : ' + bonne + '.') });
       });
     } else if (c.type === 'mots') {
       /* « Un seul mot est mal écrit » : il faut vérifier chaque mot, pas seulement en reconnaître un */
@@ -1242,7 +1242,7 @@
   let pret = null; /* dernier exercice créé par l'IA : annoncé une fois sur l'écran Exercices */
   function bandeauPret() {
     if (!pret) return null; const p = pret; pret = null;
-    return el('div', { class: 'retour ok pret' }, el('b', { text: '✅ « ' + p.titre + ' » est prêt : Faël le voit déjà.' }),
+    return el('div', { class: 'retour ok pret' }, el('b', { text: '✅ « ' + p.titre + ' » est prêt : Faël le voit déjà.' }), p.duree ? el('small', { class: 'muted', text: 'Créé en ' + p.duree + ' s par ' + p.modele + '.' }) : null,
       el('div', { class: 'rangee' }, el('a', { class: 'btn', href: '#/essai/' + p.id, text: 'L\'essayer' }), el('a', { class: 'btn discret', href: '#/p/contenu/' + p.id, text: 'Modifier' })));
   }
   function ecranEditeur(id, typeNouveau, opts) {
@@ -1383,15 +1383,15 @@
       try {
         const { r, c } = await patienter(async () => {
           const r = await api('genererContenu', { type: ty.value, texte: texte.value, precision: precision.value.trim() }); r.donnees = deballer(r.type, r.donnees);
-          const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + ')' } });
+          const c = await api('enregistrerContenu', { contenu: { type: r.type, titre: r.titre || 'Exercice du ' + jour(), matiere: MATIERES.includes(r.matiere) ? r.matiere : 'Français', theme: r.theme || 'Divers', donnees: r.donnees, statut: 'validé', source: 'IA (' + (r.modele || 'Mistral') + (r.duree ? ', ' + r.duree + ' s' : '') + ')' } });
           await charger(); return { r, c };
-        }, { plein: true, bouton: go, duree: 30, messages: ['L\'IA lit la leçon…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Elle range l\'exercice…', 'Presque fini…'] });
+        }, { plein: true, bouton: go, duree: 45, messages: ['L\'IA lit la leçon…', 'Elle prépare les questions…', 'Elle vérifie chaque réponse…', 'Elle range l\'exercice…', 'Presque fini…'] });
         if (lien && lien.tache) {
           const t = lien.tache; t.contenu = c.id; (t.besoins || []).forEach(b => { if (/exercice/.test(b.libelle) || (image && /photo/.test(b.libelle))) b.fait = true; });
           try { await api('enregistrerTache', { tache: t }); charger(); } catch (e) { /* le lien se refera à la main */ }
           toast('Prêt et relié à la tâche « ' + t.titre + ' » : Faël le voit déjà.'); location.hash = lien.retour || '#/p/semaine'; return;
         }
-        pret = { id: c.id, titre: r.titre || 'Exercice', modele: r.modele };
+        pret = { id: c.id, titre: r.titre || 'Exercice', modele: r.modele, duree: r.duree };
         location.hash = '#/p/exercices';
       } catch (e) { toast(e.message, true); }
     } });
